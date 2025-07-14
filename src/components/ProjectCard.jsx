@@ -24,7 +24,7 @@ import {
   Close as CloseIcon,
 } from '@mui/icons-material';
 
-const ProjectCard = ({ project, onUpdate, onLaunch, onDelete, onPin }) => {
+const ProjectCard = ({ project, onUpdate, onLaunch, onDelete, onPin, onTagClick, isSelected }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editedName, setEditedName] = useState(project.name);
   const [editedTags, setEditedTags] = useState(project.tags.join(', '));
@@ -134,6 +134,8 @@ const ProjectCard = ({ project, onUpdate, onLaunch, onDelete, onPin }) => {
                   size="small"
                   color="primary"
                   variant="outlined"
+                  clickable={!!onTagClick}
+                  onClick={onTagClick ? () => onTagClick(tag) : undefined}
                 />
               ))}
             </Box>

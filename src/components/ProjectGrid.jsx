@@ -17,94 +17,61 @@ const ProjectGrid = ({
   onLaunchProject,
   onDeleteProject,
   onPinProject,
-  onKeyNavigation,
+  selectedProjectIndex,
+  onTagClick,
 }) => {
   const theme = useTheme();
   const isSmallScreen = useMediaQuery(theme.breakpoints.down('md'));
   const gridRef = useRef(null);
-  const selectedCardRef = useRef(0);
 
-  // Handle keyboard navigation
+  // Scroll selected project into view
   useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (!onKeyNavigation) return;
-
+    if (typeof selectedProjectIndex === 'number' && selectedProjectIndex >= 0) {
       const cards = gridRef.current?.querySelectorAll('.project-card');
-      if (!cards || cards.length === 0) return;
-
-      let newIndex = selectedCardRef.current;
-
-      switch (e.key) {
-        case 'ArrowLeft':
-          e.preventDefault();
-          newIndex = Math.max(0, selectedCardRef.current - 1);
-          break;
-        case 'ArrowRight':
-          e.preventDefault();
-          newIndex = Math.min(cards.length - 1, selectedCardRef.current + 1);
-          break;
-        case 'ArrowUp':
-          e.preventDefault();
-          // Calculate cards per row
-          const cardsPerRow = isSmallScreen ? 1 : 2;
-          newIndex = Math.max(0, selectedCardRef.current - cardsPerRow);
-          break;
-        case 'ArrowDown':
-          e.preventDefault();
-          const perRow = isSmallScreen ? 1 : 2;
-          newIndex = Math.min(cards.length - 1, selectedCardRef.current + perRow);
-          break;
-        case 'Enter':
-          e.preventDefault();
-          // Find the launch button in the selected card and click it
-          const launchBtn = cards[selectedCardRef.current]?.querySelector('[data-launch-btn]');
-          if (launchBtn) launchBtn.click();
-          break;
-        default:
-          return;
+      if (cards && cards[selectedProjectIndex]) {
+        cards[selectedProjectIndex].scrollIntoView({ 
+          behavior: 'smooth', 
+          block: 'nearest' 
+        });
       }
-
-      if (newIndex !== selectedCardRef.current) {
-        selectedCardRef.current = newIndex;
-        cards[newIndex]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        cards[newIndex]?.focus();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isSmallScreen, onKeyNavigation]);
+    }
+  }, [selectedProjectIndex]);
 
   // Separate pinned and unpinned projects
   const pinnedProjects = projects.filter(p => p.pinned);
   const unpinnedProjects = projects.filter(p => !p.pinned);
 
-  const renderProjectCard = (project, index) => (
-    <Box
-      key={project.id}
-      className="project-card"
-      tabIndex={0}
-      sx={{
-        outline: 'none',
-        '&:focus': {
+  const renderProjectCard = (project, globalIndex) => {
+    const isSelected = globalIndex === selectedProjectIndex;
+    
+    return (
+      <Box
+        key={project.id}
+        className="project-card"
+        tabIndex={0}
+        sx={{
+          outline: 'none',
           '& > .MuiCard-root': {
-            boxShadow: theme.shadows[8],
-            borderColor: theme.palette.primary.main,
+            boxShadow: isSelected ? theme.shadows[8] : theme.shadows[1],
+            borderColor: isSelected ? theme.palette.primary.main : 'transparent',
             borderWidth: 2,
             borderStyle: 'solid',
+            transition: 'all 0.2s ease-in-out',
           },
-        },
-      }}
-    >
-      <ProjectCard
-        project={project}
-        onUpdate={onUpdateProject}
-        onLaunch={onLaunchProject}
-        onDelete={onDeleteProject}
-        onPin={onPinProject}
-      />
-    </Box>
-  );
+        }}
+      >
+        <ProjectCard
+          project={project}
+          onUpdate={onUpdateProject}
+          onLaunch={onLaunchProject}
+          onDelete={onDeleteProject}
+          onPin={onPinProject}
+          onTagClick={onTagClick}
+          isSelected={isSelected}
+        />
+      </Box>
+    );
+  };
 
   return (
     <Box ref={gridRef}>

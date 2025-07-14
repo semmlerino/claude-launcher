@@ -2,6 +2,8 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { info, error as logError, warn, debug } from '@tauri-apps/plugin-log';
+import { listen } from '@tauri-apps/api/event';
+import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import {
   ThemeProvider,
   createTheme,
@@ -25,6 +27,11 @@ import {
   DialogContentText,
   DialogActions,
   Button,
+  Chip,
+  Select,
+  MenuItem,
+  FormControl,
+  InputLabel,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -32,6 +39,8 @@ import {
   DarkMode as DarkModeIcon,
   LightMode as LightModeIcon,
   Refresh as RefreshIcon,
+  Clear as ClearIcon,
+  Sort as SortIcon,
 } from '@mui/icons-material';
 import ProjectGrid from './components/ProjectGrid';
 import './App.css';
@@ -54,6 +63,24 @@ const matchSorter = (items, searchText, options) => {
   });
 };
 
+// Project sorting function
+const sortProjects = (projects, sortBy) => {
+  switch (sortBy) {
+    case 'name':
+      return [...projects].sort((a, b) => a.name.localeCompare(b.name));
+    case 'recent':
+      return [...projects].sort((a, b) => {
+        // Handle null last_used values
+        if (!a.last_used && !b.last_used) return 0;
+        if (!a.last_used) return 1; // null goes to end
+        if (!b.last_used) return -1; // null goes to end
+        return new Date(b.last_used) - new Date(a.last_used); // recent first
+      });
+    default:
+      return projects;
+  }
+};
+
 function App() {
   const prefersDarkMode = useMediaQuery('(prefers-color-scheme: dark)');
   const [darkMode, setDarkMode] = useState(prefersDarkMode);
@@ -61,10 +88,13 @@ function App() {
   const [recentProjects, setRecentProjects] = useState([]);
   const [filteredProjects, setFilteredProjects] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [activeTags, setActiveTags] = useState([]);
   const [loading, setLoading] = useState(true);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' });
   const [deleteDialog, setDeleteDialog] = useState({ open: false, projectId: null });
   const [dragOver, setDragOver] = useState(false);
+  const [selectedProjectIndex, setSelectedProjectIndex] = useState(0);
+  const [sortOption, setSortOption] = useState('recent');
   const dropZoneRef = useRef(null);
 
   // Create theme based on dark mode preference
@@ -90,6 +120,19 @@ function App() {
     [darkMode]
   );
 
+  // Load sort preference
+  const loadSortPreference = async () => {
+    try {
+      const savedSort = await invoke('get_setting', { key: 'sort_preference' });
+      if (savedSort && (savedSort === 'name' || savedSort === 'recent')) {
+        setSortOption(savedSort);
+      }
+    } catch (error) {
+      // Use default if loading fails
+      info('Using default sort preference');
+    }
+  };
+
   // Initialize the app
   useEffect(() => {
     const init = async () => {
@@ -97,6 +140,7 @@ function App() {
         setLoading(true);
         await invoke('init_database');
         await loadProjects();
+        await loadSortPreference();
         await checkClaudeInstalled();
       } catch (error) {
         logError(`Failed to initialize: ${error}`);
@@ -106,6 +150,57 @@ function App() {
       }
     };
     init();
+  }, []);
+
+  // Set up file drop listener
+  useEffect(() => {
+    let unlisten;
+    
+    const setupListener = async () => {
+      console.log('Setting up Tauri drag-drop listener...');
+      info('Setting up Tauri drag-drop listener...');
+      
+      unlisten = await listen('tauri://drag-drop', async (event) => {
+        console.log('Tauri drag-drop event received!', event);
+        info('Tauri drag-drop event received', event);
+        const paths = event.payload.paths || [];
+        console.log('Dropped paths:', paths);
+        
+        for (const path of paths) {
+          try {
+            // Add the project directly - the backend will verify it's a valid directory
+            console.log(`Adding dropped path: ${path}`);
+            info(`Adding dropped path: ${path}`);
+            await invoke('add_project', {
+              path,
+              name: path.split(/[\\/]/).pop() || 'Unnamed Project',
+              tags: [],
+              notes: '',
+              pinned: false,
+            });
+            showSnackbar('Project added successfully!', 'success');
+          } catch (error) {
+            console.error(`Failed to add dropped project: ${error}`);
+            logError(`Failed to add dropped project: ${error}`);
+            showSnackbar(`Failed to add project: ${error}`, 'error');
+          }
+        }
+        
+        // Reload projects to show the new additions
+        await loadProjects();
+      });
+      
+      console.log('Tauri drag-drop listener set up successfully');
+      info('Tauri drag-drop listener set up successfully');
+    };
+    
+    setupListener();
+    
+    return () => {
+      if (unlisten) {
+        unlisten();
+      }
+    };
   }, []);
 
   // Load projects from backend
@@ -138,17 +233,67 @@ function App() {
     }
   };
 
-  // Filter projects based on search query
+  // Filter and sort projects based on search query, active tags, and sort option
   useEffect(() => {
-    if (!searchQuery) {
-      setFilteredProjects(projects);
-    } else {
-      const filtered = matchSorter(projects, searchQuery, {
+    let filtered = projects;
+    
+    // Apply tag filter first
+    if (activeTags.length > 0) {
+      filtered = filtered.filter(project => 
+        activeTags.every(tag => project.tags.includes(tag))
+      );
+    }
+    
+    // Apply search filter
+    if (searchQuery) {
+      filtered = matchSorter(filtered, searchQuery, {
         keys: ['name', 'tags', 'notes', 'path']
       });
-      setFilteredProjects(filtered);
     }
-  }, [searchQuery, projects]);
+    
+    // Apply sorting
+    filtered = sortProjects(filtered, sortOption);
+    
+    setFilteredProjects(filtered);
+    // Reset selection when filter or sort changes
+    setSelectedProjectIndex(0);
+  }, [searchQuery, projects, activeTags, sortOption]);
+
+  // Get all unique tags from projects
+  const getAllTags = useCallback(() => {
+    const allTags = new Set();
+    projects.forEach(project => {
+      project.tags.forEach(tag => allTags.add(tag));
+    });
+    return Array.from(allTags).sort();
+  }, [projects]);
+
+  // Handle tag filtering
+  const handleTagClick = (tag) => {
+    if (activeTags.includes(tag)) {
+      setActiveTags(activeTags.filter(t => t !== tag));
+    } else {
+      setActiveTags([...activeTags, tag]);
+    }
+  };
+
+  // Clear all tag filters
+  const clearTagFilters = () => {
+    setActiveTags([]);
+  };
+
+  // Handle sort option change
+  const handleSortChange = async (newSortOption) => {
+    setSortOption(newSortOption);
+    try {
+      await invoke('set_setting', { 
+        key: 'sort_preference', 
+        value: newSortOption 
+      });
+    } catch (error) {
+      logError(`Failed to save sort preference: ${error}`);
+    }
+  };
 
   // Show snackbar message
   const showSnackbar = (message, severity = 'info') => {
@@ -188,32 +333,29 @@ function App() {
 
   // Handle drag and drop
   const handleDragOver = (e) => {
+    console.log('HTML dragOver event fired');
+    info('HTML dragOver event fired');
     e.preventDefault();
     e.stopPropagation();
     setDragOver(true);
   };
 
   const handleDragLeave = (e) => {
+    console.log('HTML dragLeave event fired');
+    info('HTML dragLeave event fired');
     e.preventDefault();
     e.stopPropagation();
     setDragOver(false);
   };
 
   const handleDrop = async (e) => {
+    console.log('HTML drop event fired', e);
+    info('HTML drop event fired');
     e.preventDefault();
     e.stopPropagation();
     setDragOver(false);
-
-    const files = Array.from(e.dataTransfer.files);
-    // Filter for directories
-    for (const file of files) {
-      if (file.type === '' || file.type === 'directory') {
-        // In a real implementation, we'd need to get the full path
-        // For now, we'll show a message
-        showSnackbar('Drag and drop is not fully supported yet. Please use the Add button.', 'info');
-        break;
-      }
-    }
+    // The actual file handling is done by the Tauri drag-drop event listener
+    // This handler just prevents the browser's default behavior
   };
 
   // Update project
@@ -272,6 +414,41 @@ function App() {
     }
   };
 
+  // Keyboard navigation
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (filteredProjects.length === 0) return;
+
+      switch (e.key) {
+        case 'ArrowDown':
+          e.preventDefault();
+          setSelectedProjectIndex(prev => 
+            prev < filteredProjects.length - 1 ? prev + 1 : 0
+          );
+          break;
+        case 'ArrowUp':
+          e.preventDefault();
+          setSelectedProjectIndex(prev => 
+            prev > 0 ? prev - 1 : filteredProjects.length - 1
+          );
+          break;
+        case 'Enter':
+          e.preventDefault();
+          if (filteredProjects[selectedProjectIndex]) {
+            const selectedProject = filteredProjects[selectedProjectIndex];
+            handleLaunchProject(selectedProject.id, e.shiftKey);
+          }
+          break;
+        case 'Escape':
+          setSelectedProjectIndex(0);
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [filteredProjects, selectedProjectIndex, handleLaunchProject]);
+
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
@@ -314,6 +491,28 @@ function App() {
               }}
             />
 
+            {/* Sort Dropdown */}
+            <FormControl 
+              size="small" 
+              sx={{ 
+                mr: 2, 
+                minWidth: 140,
+                backgroundColor: 'background.paper',
+                borderRadius: 1,
+              }}
+            >
+              <InputLabel>Sort by</InputLabel>
+              <Select
+                value={sortOption}
+                label="Sort by"
+                onChange={(e) => handleSortChange(e.target.value)}
+                startAdornment={<SortIcon sx={{ mr: 1, color: 'text.secondary' }} />}
+              >
+                <MenuItem value="recent">Recently Used</MenuItem>
+                <MenuItem value="name">Name (A-Z)</MenuItem>
+              </Select>
+            </FormControl>
+
             {/* Refresh Button */}
             <IconButton color="inherit" onClick={loadProjects}>
               <RefreshIcon />
@@ -339,6 +538,45 @@ function App() {
             position: 'relative',
           }}
         >
+          {/* Tag Filter Section */}
+          {!loading && getAllTags().length > 0 && (
+            <Box sx={{ mb: 3 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                <Typography variant="h6" sx={{ mr: 2 }}>
+                  Filter by Tags:
+                </Typography>
+                {activeTags.length > 0 && (
+                  <Button
+                    size="small"
+                    startIcon={<ClearIcon />}
+                    onClick={clearTagFilters}
+                    sx={{ ml: 1 }}
+                  >
+                    Clear Filters
+                  </Button>
+                )}
+              </Box>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                {getAllTags().map((tag) => (
+                  <Chip
+                    key={tag}
+                    label={tag}
+                    variant={activeTags.includes(tag) ? 'filled' : 'outlined'}
+                    color={activeTags.includes(tag) ? 'primary' : 'default'}
+                    clickable
+                    onClick={() => handleTagClick(tag)}
+                    sx={{ mb: 1 }}
+                  />
+                ))}
+              </Box>
+              {activeTags.length > 0 && (
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                  Showing {filteredProjects.length} project(s) with tags: {activeTags.join(', ')}
+                </Typography>
+              )}
+            </Box>
+          )}
+          
           {loading ? (
             <Box
               sx={{
@@ -358,7 +596,8 @@ function App() {
               onLaunchProject={handleLaunchProject}
               onDeleteProject={handleDeleteProject}
               onPinProject={handlePinProject}
-              onKeyNavigation={true}
+              selectedProjectIndex={selectedProjectIndex}
+              onTagClick={handleTagClick}
             />
           )}
 

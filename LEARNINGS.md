@@ -154,6 +154,93 @@ This ensures:
   - `%APPDATA%\ClaudeLauncher\logs\` (Windows)
   - Browser DevTools (F12)
 
+## Settings & Data Persistence
+- **Database Schema**: Use SQLite with separate `settings` table for key-value storage
+- **Settings Infrastructure**:
+  ```rust
+  // Tauri commands for settings
+  get_setting(key: String) -> Option<String>
+  set_setting(key: String, value: String)
+  ```
+- **React Integration**: Load settings on app init, persist changes immediately
+- **Common Settings**: Theme preferences, sort options, UI state
+- **Database Location**: Same as main app database for consistency
+
+## UI State Management & Features
+
+### Tag Filtering System
+- **Multi-select filtering**: Users can select multiple tags simultaneously
+- **AND logic**: Projects must have ALL selected tags to be shown
+- **State management**: Use React state + useEffect for real-time filtering
+- **UI Components**: Clickable chips throughout the app (main filter area + project cards)
+- **Clear filters**: Provide easy way to reset all active filters
+
+### Keyboard Navigation
+- **Arrow keys**: Up/Down to navigate between projects
+- **Enter key**: Launch selected project (Shift+Enter for continue mode)
+- **Escape key**: Reset selection to first project
+- **Visual feedback**: Enhanced shadow and border for selected project
+- **Integration**: Works with filtered project lists
+- **State management**: Track `selectedProjectIndex` and sync with filtering
+
+### Project Sorting
+- **Available options**: Name (A-Z), Recently Used
+- **Default sort**: Recently Used (most practical for users)
+- **Persistence**: Save sort preference to database settings
+- **Integration**: Sorting applied after tag filtering and search
+- **UI placement**: Dropdown in toolbar between search and refresh
+- **Null handling**: Projects without `last_used` appear at end of Recently Used sort
+
+## Rust Development in WSL Environment
+
+### PATH Configuration Issues
+- **Problem**: `cargo not found` error even when Rust is installed
+- **Root cause**: `~/.cargo/bin` not in PATH during npm script execution
+- **Solution**: Export PATH in same command context:
+  ```bash
+  export PATH="$HOME/.cargo/bin:$PATH" && npm run tauri dev
+  ```
+- **Alternative**: Add to shell profile permanently
+
+### Compilation Performance
+- **First build**: Can take 10+ minutes compiling 550+ dependencies
+- **Subsequent builds**: Much faster due to cached dependencies
+- **Timeout considerations**: Use generous timeouts (10+ minutes) for initial builds
+- **Clean builds**: `cargo clean` removes cache, requires full recompilation
+- **Build types**: `cargo build --release` vs `npm run tauri dev` serve different purposes
+
+### Build Process Understanding
+- **npm run tauri dev**: Builds frontend + backend, starts dev server
+- **npm run tauri build**: Full production build with bundled resources
+- **cargo build**: Rust-only compilation, missing frontend integration
+- **Resource embedding**: Only happens through Tauri CLI, not direct cargo commands
+- **Development workflow**: Use `tauri dev` for testing, `tauri build` for deployment
+
+## Development Workflow Improvements
+
+### Systematic Feature Implementation
+1. **Planning Phase**: Update improvement plan with specific requirements
+2. **State Management**: Add necessary React state variables
+3. **UI Components**: Implement user interface elements
+4. **Backend Integration**: Add Tauri commands if needed
+5. **Persistence**: Save settings/preferences to database
+6. **Testing**: Build and verify functionality works
+7. **Documentation**: Update improvement plan and todo tracking
+
+### Code Organization Patterns
+- **Utility functions**: Extract complex logic (sorting, filtering) to separate functions
+- **Component props**: Pass functions down component hierarchy for events
+- **State updates**: Use useEffect with proper dependencies for reactive updates
+- **Error handling**: Wrap Tauri invoke calls in try-catch blocks
+- **Loading states**: Show appropriate UI during async operations
+
+### Material-UI Integration
+- **Import strategy**: Import specific components to reduce bundle size
+- **Consistent styling**: Use theme-based colors and spacing
+- **Responsive design**: Use breakpoints for mobile/desktop layouts
+- **Component composition**: Combine multiple MUI components for complex UI
+- **Form controls**: Use FormControl, Select, MenuItem for dropdowns
+
 ## Future Improvements
 - Consider GitHub Actions for automated Windows builds
 - Add pre-commit hooks for build verification
@@ -162,3 +249,7 @@ This ensures:
 - Create project template with proper security defaults
 - Document required tools for each platform
 - Include proper installer creation in CI/CD pipeline
+- Add remaining sort options (Date Added, Most Used) with database schema updates
+- Implement project validation and error handling
+- Add import/export functionality for project data
+- Create settings/preferences page for advanced configuration

@@ -33,13 +33,19 @@ This will create:
 - MSI installer in `src-tauri/target/release/bundle/msi/`
 - NSIS installer in `src-tauri/target/release/bundle/nsis/`
 
-## Testing the Python Sidecar
+## Cross-Compilation (WSL to Windows)
 
-To test the Python sidecar independently:
+To build a Windows executable from WSL:
 
 ```bash
-python3 test_python_sidecar.py
+# Add Rust Windows target
+rustup target add x86_64-pc-windows-gnu
+
+# Build Windows executable
+npm run tauri build -- --target x86_64-pc-windows-gnu --no-bundle
 ```
+
+The executable will be created in `src-tauri/target/x86_64-pc-windows-gnu/release/`
 
 ## Troubleshooting
 
@@ -50,10 +56,17 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 source "$HOME/.cargo/env"
 ```
 
-### Python errors
-Make sure Python 3.11+ is installed:
+### Build timeouts
+Initial builds can take 10+ minutes compiling 550+ Rust dependencies. Use generous timeouts:
 ```bash
-python3 --version
+# Use longer timeout for first build
+npm run tauri dev
+```
+
+### WSL PATH issues
+If Rust tools aren't found in WSL:
+```bash
+export PATH="$HOME/.cargo/bin:$PATH"
 ```
 
 ### Window doesn't appear
