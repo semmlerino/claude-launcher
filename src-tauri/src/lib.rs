@@ -58,6 +58,15 @@ impl AppDatabase {
             [],
         )?;
         
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )",
+            [],
+        )?;
+        
         // Create indexes
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_last_used ON projects(last_used DESC)",
@@ -298,6 +307,34 @@ impl AppDatabase {
         
         Ok(())
     }
+    
+    fn get_setting(&self, key: &str) -> Result<Option<String>, String> {
+        let conn = self.conn.lock().unwrap();
+        
+        let result: Result<String, rusqlite::Error> = conn.query_row(
+            "SELECT value FROM settings WHERE key = ?1",
+            params![key],
+            |row| row.get(0),
+        );
+        
+        match result {
+            Ok(value) => Ok(Some(value)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+    
+    fn set_setting(&self, key: &str, value: &str) -> Result<(), String> {
+        let conn = self.conn.lock().unwrap();
+        
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?1, ?2, ?3)",
+            params![key, value, Utc::now().to_rfc3339()],
+        )
+        .map_err(|e| e.to_string())?;
+        
+        Ok(())
+    }
 }
 
 #[tauri::command]
@@ -440,6 +477,16 @@ async fn check_claude_installed(app_handle: tauri::AppHandle) -> Result<serde_js
     }))
 }
 
+#[tauri::command]
+async fn get_setting(key: String, db: State<'_, AppDatabase>) -> Result<Option<String>, String> {
+    db.get_setting(&key)
+}
+
+#[tauri::command] 
+async fn set_setting(key: String, value: String, db: State<'_, AppDatabase>) -> Result<(), String> {
+    db.set_setting(&key, &value)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     info!("Starting Claude Launcher...");
@@ -522,12 +569,14 @@ pub fn run() {
             update_project,
             launch_project,
             delete_project,
-            check_claude_installed
+            check_claude_installed,
+            get_setting,
+            set_setting
         ])
-        .on_window_event(|window, event| {
+        .on_window_event(|_window, event| {
             debug!("Window event: {:?}", event);
         })
-        .on_page_load(|webview, payload| {
+        .on_page_load(|_webview, payload| {
             info!("Page load event: {:?}", payload.url());
             info!("Page event: {:?}", payload.event());
         })

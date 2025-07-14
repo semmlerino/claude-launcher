@@ -20,20 +20,20 @@
       "identifier": "shell:allow-execute",
       "allow": [
         {
-          "name": "python3",
-          "cmd": "python3",
-          "args": true,
-          "sidecar": false
-        },
-        {
-          "name": "python",
-          "cmd": "python",
-          "args": true,
-          "sidecar": false
-        },
-        {
           "name": "claude-code",
           "cmd": "claude-code",
+          "args": true,
+          "sidecar": false
+        },
+        {
+          "name": "claude",
+          "cmd": "claude",
+          "args": true,
+          "sidecar": false
+        },
+        {
+          "name": "claude-cli",
+          "cmd": "claude-cli",
           "args": true,
           "sidecar": false
         }
