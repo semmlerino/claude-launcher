@@ -1,0 +1,442 @@
+import '@testing-library/jest-dom';
+import { afterEach, vi } from 'vitest';
+import { randomFillSync } from 'crypto';
+
+// Note: clearMocks import is commented out to avoid potential import issues
+// We'll handle clearing mocks in individual test files
+// import { clearMocks } from '@tauri-apps/api/mocks';
+
+// Polyfill crypto for jsdom
+Object.defineProperty(window, 'crypto', {
+  value: {
+    getRandomValues: function (buffer) {
+      return randomFillSync(buffer);
+    },
+  },
+});
+
+// Mock MUI Lab's Masonry component which causes hanging in jsdom
+vi.mock('@mui/lab', () => ({
+  Masonry: ({ children, ...props }) => {
+    const React = require('react');
+    return React.createElement('div', { 'data-testid': 'mock-masonry', ...props }, children);
+  }
+}));
+
+// Mock custom components
+vi.mock('../components/ContextMenu', () => ({
+  default: ({ open, onClose, onRename, onChangeColor, onDelete, ...props }) => {
+    const React = require('react');
+    return open ? React.createElement('div', { 'data-testid': 'context-menu', ...props }, [
+      React.createElement('button', { key: 'rename', onClick: onRename }, 'Rename'),
+      React.createElement('button', { key: 'color', onClick: onChangeColor }, 'Change Color'),
+      React.createElement('button', { key: 'delete', onClick: onDelete }, 'Delete')
+    ]) : null;
+  }
+}));
+
+vi.mock('../components/ColorPicker', () => ({
+  default: ({ open, onClose, onColorSelect, currentColor, ...props }) => {
+    const React = require('react');
+    return open ? React.createElement('div', { 'data-testid': 'color-picker', ...props }, [
+      React.createElement('div', { key: 'current' }, 'Current Color: ', currentColor),
+      React.createElement('button', { key: 'select', onClick: () => onColorSelect('#ff5722') }, 'Select Color'),
+      React.createElement('button', { key: 'clear', onClick: () => onColorSelect(null) }, 'Clear Color'),
+      React.createElement('button', { key: 'close', onClick: onClose }, 'Close')
+    ]) : null;
+  }
+}));
+
+// Mock @mui/material to prevent module initialization hanging in jsdom
+// MUI v6 has issues with jsdom environment that cause tests to hang during import
+vi.mock('@mui/material', () => ({
+  // Theme-related exports
+  ThemeProvider: ({ children }) => children,
+  createTheme: (options = {}) => ({
+    palette: {
+      mode: 'light',
+      primary: { main: '#1976d2', light: '#42a5f5', dark: '#1565c0' },
+      secondary: { main: '#dc004e' },
+      background: { default: '#f5f5f5', paper: '#fff' },
+      text: { primary: '#000', secondary: '#666' },
+      error: { main: '#f44336' },
+      warning: { main: '#ff9800' },
+      info: { main: '#2196f3' },
+      success: { main: '#4caf50' },
+      ...(options.palette || {})
+    },
+    shape: options.shape || { borderRadius: 8 },
+    breakpoints: {
+      keys: ['xs', 'sm', 'md', 'lg', 'xl'],
+      values: { xs: 0, sm: 600, md: 900, lg: 1200, xl: 1536 },
+      up: (key) => `@media (min-width:${key}px)`,
+      down: (key) => `@media (max-width:${key}px)`,
+      between: (start, end) => `@media (min-width:${start}px) and (max-width:${end}px)`,
+      only: (key) => `@media (min-width:${key}px)`,
+      not: (key) => `@media not all and (min-width:${key}px)`,
+    },
+    spacing: (factor) => `${8 * factor}px`,
+    shadows: [
+      'none',
+      '0px 2px 1px rgba(0,0,0,0.2)',
+      '0px 3px 1px rgba(0,0,0,0.2)',
+      '0px 3px 3px rgba(0,0,0,0.2)',
+      '0px 2px 4px rgba(0,0,0,0.2)',
+      '0px 3px 5px rgba(0,0,0,0.2)',
+      '0px 3px 5px rgba(0,0,0,0.2)',
+      '0px 4px 5px rgba(0,0,0,0.2)',
+      '0px 5px 5px rgba(0,0,0,0.2)',
+      '0px 5px 6px rgba(0,0,0,0.2)',
+      '0px 6px 6px rgba(0,0,0,0.2)',
+      '0px 6px 7px rgba(0,0,0,0.2)',
+      '0px 7px 8px rgba(0,0,0,0.2)',
+      '0px 7px 8px rgba(0,0,0,0.2)',
+      '0px 7px 9px rgba(0,0,0,0.2)',
+      '0px 8px 9px rgba(0,0,0,0.2)',
+      '0px 8px 10px rgba(0,0,0,0.2)',
+      '0px 8px 11px rgba(0,0,0,0.2)',
+      '0px 9px 11px rgba(0,0,0,0.2)',
+      '0px 9px 12px rgba(0,0,0,0.2)',
+      '0px 10px 13px rgba(0,0,0,0.2)',
+      '0px 10px 13px rgba(0,0,0,0.2)',
+      '0px 10px 14px rgba(0,0,0,0.2)',
+      '0px 11px 14px rgba(0,0,0,0.2)',
+      '0px 11px 15px rgba(0,0,0,0.2)'
+    ],
+    ...options
+  }),
+  
+  // Commonly used components - add more as needed
+  Box: require('react').forwardRef(({ children, ...props }, ref) => {
+    const React = require('react');
+    // Filter out non-DOM props
+    const { sx, component, ...domProps } = props;
+    return React.createElement(component || 'div', { ...domProps, ref }, children);
+  }),
+  Button: ({ children, startIcon, endIcon, ...props }) => {
+    const React = require('react');
+    // Filter out MUI-specific props
+    const { sx, color, variant, ...domProps } = props;
+    // Use React.Fragment to avoid key warning
+    return React.createElement('button', domProps, 
+      startIcon ? React.createElement(React.Fragment, {}, startIcon, ' ', children) : children
+    );
+  },
+  Container: ({ children, maxWidth, ...props }) => {
+    const React = require('react');
+    // Filter out MUI-specific props
+    return React.createElement('div', props, children);
+  },
+  Typography: ({ children, variant, component, gutterBottom, noWrap, ...props }) => {
+    const React = require('react');
+    let tag = component || 'p';
+    
+    // Map variants to HTML elements with correct heading levels
+    if (variant && !component) {
+      switch (variant) {
+        case 'h1': tag = 'h1'; break;
+        case 'h2': tag = 'h2'; break;
+        case 'h3': tag = 'h3'; break;
+        case 'h4': tag = 'h4'; break;
+        case 'h5': tag = 'h5'; break;
+        case 'h6': tag = 'h6'; break;
+        case 'subtitle1':
+        case 'subtitle2':
+        case 'body1':
+        case 'body2':
+        case 'caption':
+        case 'overline':
+          tag = 'p';
+          break;
+        default:
+          tag = 'p';
+      }
+    }
+    
+    // Filter out MUI-specific props
+    const { sx, color, ...domProps } = props;
+    return React.createElement(tag, domProps, children);
+  },
+  Paper: ({ children, ...props }) => {
+    const React = require('react');
+    return React.createElement('div', props, children);
+  },
+  Card: ({ children, ...props }) => {
+    const React = require('react');
+    return React.createElement('div', props, children);
+  },
+  CardContent: ({ children, ...props }) => {
+    const React = require('react');
+    return React.createElement('div', props, children);
+  },
+  CardActions: ({ children, ...props }) => {
+    const React = require('react');
+    return React.createElement('div', props, children);
+  },
+  IconButton: ({ children, ...props }) => {
+    const React = require('react');
+    // Filter out MUI-specific props
+    const { sx, color, size, edge, disabled, onClick, ...domProps } = props;
+    return React.createElement('button', { ...domProps, disabled, onClick }, children);
+  },
+  TextField: ({ InputProps, inputProps, fullWidth, multiline, rows, variant, size, ...props }) => {
+    const React = require('react');
+    // Filter out MUI-specific props and merge InputProps and inputProps
+    const { sx, label, error, helperText, ...domProps } = props;
+    const finalProps = { ...domProps, ...inputProps };
+    return React.createElement('input', finalProps);
+  },
+  Chip: ({ label, clickable, ...props }) => {
+    const React = require('react');
+    // Filter out MUI-specific props
+    const { onClick, ...domProps } = props;
+    return React.createElement('span', { ...domProps, onClick }, label);
+  },
+  
+  // Additional components used in App.jsx
+  AppBar: ({ children, ...props }) => {
+    const React = require('react');
+    return React.createElement('header', props, children);
+  },
+  Toolbar: ({ children, ...props }) => {
+    const React = require('react');
+    return React.createElement('div', props, children);
+  },
+  Fab: ({ children, ...props }) => {
+    const React = require('react');
+    return React.createElement('button', props, children);
+  },
+  Snackbar: ({ children, open, autoHideDuration, anchorOrigin, ...props }) => {
+    const React = require('react');
+    // Filter out MUI-specific props
+    const { sx, onClose, ...domProps } = props;
+    return open ? React.createElement('div', domProps, children) : null;
+  },
+  Alert: ({ children, ...props }) => {
+    const React = require('react');
+    return React.createElement('div', { role: 'alert', ...props }, children);
+  },
+  Dialog: ({ children, open, ...props }) => {
+    const React = require('react');
+    return open ? React.createElement('div', { role: 'dialog', ...props }, children) : null;
+  },
+  DialogTitle: ({ children, ...props }) => {
+    const React = require('react');
+    return React.createElement('h2', props, children);
+  },
+  DialogContent: ({ children, ...props }) => {
+    const React = require('react');
+    return React.createElement('div', props, children);
+  },
+  DialogContentText: ({ children, ...props }) => {
+    const React = require('react');
+    return React.createElement('p', props, children);
+  },
+  DialogActions: ({ children, ...props }) => {
+    const React = require('react');
+    return React.createElement('div', props, children);
+  },
+  Select: ({ children, value, startAdornment, onChange, ...props }) => {
+    const React = require('react');
+    // Filter out MUI-specific props
+    const { sx, label, ...domProps } = props;
+    return React.createElement('select', { 
+      value, 
+      onChange,
+      ...domProps,
+      role: 'combobox'
+    }, children);
+  },
+  MenuItem: ({ children, value, ...props }) => {
+    const React = require('react');
+    return React.createElement('option', { 
+      value, 
+      role: 'option',
+      ...props 
+    }, children);
+  },
+  FormControl: ({ children, ...props }) => {
+    const React = require('react');
+    return React.createElement('div', props, children);
+  },
+  InputLabel: ({ children, ...props }) => {
+    const React = require('react');
+    return React.createElement('label', props, children);
+  },
+  InputAdornment: ({ children, position, ...props }) => {
+    const React = require('react');
+    return React.createElement('div', props, children);
+  },
+  CircularProgress: (props) => {
+    const React = require('react');
+    return React.createElement('div', { role: 'progressbar', ...props });
+  },
+  Grid: ({ children, ...props }) => {
+    const React = require('react');
+    return React.createElement('div', props, children);
+  },
+  Divider: (props) => {
+    const React = require('react');
+    return React.createElement('hr', props);
+  },
+  Tooltip: ({ children, title, ...props }) => {
+    // Just return the children without cloning
+    return children;
+  },
+  FormControlLabel: ({ control, label, ...props }) => {
+    const React = require('react');
+    return React.createElement('label', props, 
+      React.createElement(React.Fragment, {}, control, ' ', label)
+    );
+  },
+  Checkbox: (props) => {
+    const React = require('react');
+    return React.createElement('input', { type: 'checkbox', ...props });
+  },
+  Menu: ({ children, open, anchorPosition, anchorReference, ...props }) => {
+    const React = require('react');
+    return open ? React.createElement('div', { role: 'menu', ...props }, children) : null;
+  },
+  ListItemIcon: ({ children, ...props }) => {
+    const React = require('react');
+    return React.createElement('span', props, children);
+  },
+  ListItemText: ({ children, ...props }) => {
+    const React = require('react');
+    return React.createElement('span', props, children);
+  },
+  
+  // Other exports that might be used
+  CssBaseline: () => null,
+  useTheme: () => ({ 
+    palette: { mode: 'light' },
+    breakpoints: {
+      keys: ['xs', 'sm', 'md', 'lg', 'xl'],
+      values: { xs: 0, sm: 600, md: 900, lg: 1200, xl: 1536 },
+      up: (key) => `@media (min-width:${key}px)`,
+      down: (key) => `@media (max-width:${key}px)`,
+      between: (start, end) => `@media (min-width:${start}px) and (max-width:${end}px)`,
+      only: (key) => `@media (min-width:${key}px)`,
+      not: (key) => `@media not all and (min-width:${key}px)`,
+    }
+  }),
+  useTheme: () => ({
+    palette: {
+      mode: 'light',
+      primary: { main: '#1976d2', light: '#42a5f5', dark: '#1565c0' },
+      secondary: { main: '#dc004e' },
+      background: { default: '#f5f5f5', paper: '#fff' },
+      text: { primary: '#000', secondary: '#666' },
+      error: { main: '#f44336' },
+      warning: { main: '#ff9800' },
+      info: { main: '#2196f3' },
+      success: { main: '#4caf50' },
+    },
+    shape: { borderRadius: 8 },
+    breakpoints: {
+      keys: ['xs', 'sm', 'md', 'lg', 'xl'],
+      values: { xs: 0, sm: 600, md: 900, lg: 1200, xl: 1536 },
+      up: (key) => `@media (min-width:${key}px)`,
+      down: (key) => `@media (max-width:${key}px)`,
+      between: (start, end) => `@media (min-width:${start}px) and (max-width:${end}px)`,
+      only: (key) => `@media (min-width:${key}px)`,
+      not: (key) => `@media not all and (min-width:${key}px)`,
+    },
+    spacing: (factor) => `${8 * factor}px`,
+    shadows: [
+      'none',
+      '0px 2px 1px rgba(0,0,0,0.2)',
+      '0px 3px 1px rgba(0,0,0,0.2)',
+      '0px 3px 3px rgba(0,0,0,0.2)',
+      '0px 2px 4px rgba(0,0,0,0.2)',
+      '0px 3px 5px rgba(0,0,0,0.2)',
+      '0px 3px 5px rgba(0,0,0,0.2)',
+      '0px 4px 5px rgba(0,0,0,0.2)',
+      '0px 5px 5px rgba(0,0,0,0.2)',
+      '0px 5px 6px rgba(0,0,0,0.2)',
+      '0px 6px 6px rgba(0,0,0,0.2)',
+      '0px 6px 7px rgba(0,0,0,0.2)',
+      '0px 7px 8px rgba(0,0,0,0.2)',
+      '0px 7px 8px rgba(0,0,0,0.2)',
+      '0px 7px 9px rgba(0,0,0,0.2)',
+      '0px 8px 9px rgba(0,0,0,0.2)',
+      '0px 8px 10px rgba(0,0,0,0.2)',
+      '0px 8px 11px rgba(0,0,0,0.2)',
+      '0px 9px 11px rgba(0,0,0,0.2)',
+      '0px 9px 12px rgba(0,0,0,0.2)',
+      '0px 10px 13px rgba(0,0,0,0.2)',
+      '0px 10px 13px rgba(0,0,0,0.2)',
+      '0px 10px 14px rgba(0,0,0,0.2)',
+      '0px 11px 14px rgba(0,0,0,0.2)',
+      '0px 11px 15px rgba(0,0,0,0.2)'
+    ],
+  }),
+  useMediaQuery: () => false,
+}));
+
+// Mock @mui/icons-material
+vi.mock('@mui/icons-material', () => ({
+  Add: () => 'AddIcon',
+  Search: () => 'SearchIcon',
+  DarkMode: () => 'DarkModeIcon',
+  LightMode: () => 'LightModeIcon',
+  Refresh: () => 'RefreshIcon',
+  Clear: () => 'ClearIcon',
+  Sort: () => 'SortIcon',
+  Star: () => 'StarIcon',
+  StarBorder: () => 'StarBorderIcon',
+  Launch: () => 'LaunchIcon',
+  Edit: () => 'EditIcon',
+  Delete: () => 'DeleteIcon',
+  Folder: () => 'FolderIcon',
+  Check: () => 'CheckIcon',
+  Close: () => 'CloseIcon',
+  Notes: () => 'NotesIcon',
+  Palette: () => 'PaletteIcon',
+}));
+
+// Clear all mocks after each test
+afterEach(() => {
+  // Individual tests will call clearMocks when needed
+});
+
+// Mock console methods that might be noisy in tests
+global.console = {
+  ...console,
+  // Keep error and warn for debugging test failures
+  error: console.error,
+  warn: console.warn,
+  // Silence info and debug logs unless debugging
+  info: vi.fn(),
+  debug: vi.fn(),
+  log: vi.fn(),
+};
+
+// Mock window.matchMedia
+Object.defineProperty(window, 'matchMedia', {
+  writable: true,
+  value: vi.fn().mockImplementation(query => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: vi.fn(), // deprecated
+    removeListener: vi.fn(), // deprecated
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  })),
+});
+
+// Mock IntersectionObserver
+global.IntersectionObserver = vi.fn().mockImplementation(() => ({
+  observe: vi.fn(),
+  unobserve: vi.fn(),
+  disconnect: vi.fn(),
+}));
+
+// Mock ResizeObserver
+global.ResizeObserver = vi.fn().mockImplementation(() => ({
+  observe: vi.fn(),
+  unobserve: vi.fn(),
+  disconnect: vi.fn(),
+}));
