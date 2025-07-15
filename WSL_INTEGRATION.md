@@ -9,15 +9,20 @@ WSL integration is configured through the following settings in the database:
 - `use_wsl`: Boolean to enable/disable WSL mode (default: `true` on Windows)
 - `claude_executable_path`: Path to claude executable in WSL (default: `/home/gabrielh/.nvm/versions/node/v24.1.0/bin/claude`)
 - `keep_terminal_open`: Boolean to keep terminal open after launching (default: `false`)
+- `wsl_launch_method`: Launch method to use (default: `batch`, options: `batch`, `wt`, `powershell`)
 
 ## How It Works
-When WSL mode is enabled:
-1. The launcher uses `wsl -e bash -c` to execute commands in WSL
-2. Windows paths are automatically converted to WSL paths using `wslpath`
-3. The continue flag (`--continue`) is supported
-4. Optional terminal persistence with `exec bash`
 
-## Command Format
+### Batch File Method (Default)
+The launcher creates a temporary batch file to ensure reliable command execution:
+1. Creates a `.bat` file in the temp directory with the exact WSL command
+2. Executes the batch file using `cmd /c`
+3. Automatically cleans up the batch file after 5 seconds
+4. Shows clear debug output and error messages
+
+This method avoids complex shell escaping issues and provides the most reliable execution.
+
+### Command Format
 The generated WSL command follows this pattern:
 ```bash
 wsl -e bash -c "cd \"$(wslpath 'WINDOWS_PATH')\" && CLAUDE_PATH --dangerously-skip-permissions [--continue] [&& exec bash]"
