@@ -70,6 +70,24 @@ impl AppDatabase {
             [],
         )?;
         
+        // Initialize default WSL settings if they don't exist
+        let default_settings = vec![
+            ("use_wsl", "true"),  // Enable WSL by default on Windows
+            ("claude_executable_path", "/home/gabrielh/.nvm/versions/node/v24.1.0/bin/claude"),
+            ("keep_terminal_open", "false"),
+        ];
+        
+        for (key, default_value) in default_settings {
+            // Only insert if the setting doesn't already exist
+            match conn.execute(
+                "INSERT OR IGNORE INTO settings (key, value) VALUES (?1, ?2)",
+                params![key, default_value],
+            ) {
+                Ok(_) => {},
+                Err(e) => warn!("Failed to initialize setting {}: {}", key, e),
+            }
+        }
+        
         // Create indexes
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_last_used ON projects(last_used DESC)",
@@ -470,47 +488,97 @@ async fn launch_project(
     // Build command
     let shell = app_handle.shell();
     
-    // Build the command with chained calls
-    let mut cmd = shell.command("claude-code")
-        .arg("--dangerously-skip-permissions");
+    // Check if WSL mode is enabled (only on Windows)
+    let use_wsl = if cfg!(windows) {
+        db.get_setting("use_wsl")?.unwrap_or_else(|| "false".to_string()) == "true"
+    } else {
+        false
+    };
     
-    if continue_flag {
-        cmd = cmd.arg("--continue");
-    }
-    
-    cmd = cmd.arg(&project.path);
-    
-    // Launch asynchronously
-    info!("Attempting to launch Claude Code for project: {}", project.name);
-    match cmd.spawn() {
-        Ok(_child) => {
-            info!("Successfully launched Claude Code");
-            Ok(serde_json::json!({
-                "message": format!("Launched Claude Code for {}", project.name)
-            }))
+    if use_wsl {
+        // Get WSL settings
+        let claude_path = db.get_setting("claude_executable_path")?
+            .unwrap_or_else(|| "claude".to_string());
+        let keep_terminal = db.get_setting("keep_terminal_open")?
+            .unwrap_or_else(|| "false".to_string()) == "true";
+        
+        // Build WSL command
+        // Escape single quotes in the path for shell safety
+        let escaped_path = project.path.replace("'", "'\\''");
+        
+        let mut wsl_cmd = format!(
+            "cd \\\"$(wslpath '{}')\\\" && {} --dangerously-skip-permissions",
+            escaped_path,
+            claude_path
+        );
+        
+        if continue_flag {
+            wsl_cmd.push_str(" --continue");
         }
-        Err(e) => {
-            warn!("Failed to launch claude-code: {}", e);
-            // Try alternative command names
-            let alt_names = ["claude", "claude-cli"];
-            for name in &alt_names {
-                let mut cmd = shell.command(name)
-                    .arg("--dangerously-skip-permissions");
-                
-                if continue_flag {
-                    cmd = cmd.arg("--continue");
-                }
-                
-                cmd = cmd.arg(&project.path);
-                
-                if let Ok(_child) = cmd.spawn() {
-                    return Ok(serde_json::json!({
-                        "message": format!("Launched {} for {}", name, project.name)
-                    }));
-                }
+        
+        if keep_terminal {
+            wsl_cmd.push_str(" && exec bash");
+        }
+        
+        let cmd = shell.command("wsl")
+            .args(&["-e", "bash", "-c", &wsl_cmd]);
+        
+        info!("Attempting to launch Claude Code via WSL: {}", wsl_cmd);
+        match cmd.spawn() {
+            Ok(_child) => {
+                info!("Successfully launched Claude Code via WSL");
+                Ok(serde_json::json!({
+                    "message": format!("Launched Claude Code for {} (WSL)", project.name)
+                }))
             }
-            
-            Err(format!("Failed to launch Claude Code: {}. Make sure claude-code is installed and in PATH", e))
+            Err(e) => {
+                warn!("Failed to launch via WSL: {}", e);
+                Err(format!("Failed to launch Claude Code via WSL: {}. Make sure WSL is installed and claude is available at: {}", e, claude_path))
+            }
+        }
+    } else {
+        // Non-WSL execution (existing logic)
+        let mut cmd = shell.command("claude-code")
+            .arg("--dangerously-skip-permissions");
+        
+        if continue_flag {
+            cmd = cmd.arg("--continue");
+        }
+        
+        cmd = cmd.arg(&project.path);
+        
+        // Launch asynchronously
+        info!("Attempting to launch Claude Code for project: {}", project.name);
+        match cmd.spawn() {
+            Ok(_child) => {
+                info!("Successfully launched Claude Code");
+                Ok(serde_json::json!({
+                    "message": format!("Launched Claude Code for {}", project.name)
+                }))
+            }
+            Err(e) => {
+                warn!("Failed to launch claude-code: {}", e);
+                // Try alternative command names
+                let alt_names = ["claude", "claude-cli"];
+                for name in &alt_names {
+                    let mut cmd = shell.command(name)
+                        .arg("--dangerously-skip-permissions");
+                    
+                    if continue_flag {
+                        cmd = cmd.arg("--continue");
+                    }
+                    
+                    cmd = cmd.arg(&project.path);
+                    
+                    if let Ok(_child) = cmd.spawn() {
+                        return Ok(serde_json::json!({
+                            "message": format!("Launched {} for {}", name, project.name)
+                        }));
+                    }
+                }
+                
+                Err(format!("Failed to launch Claude Code: {}. Make sure claude-code is installed and in PATH", e))
+            }
         }
     }
 }
@@ -525,25 +593,64 @@ async fn delete_project(db: State<'_, AppDatabase>, id: String) -> Result<serde_
 }
 
 #[tauri::command]
-async fn check_claude_installed(app_handle: tauri::AppHandle) -> Result<serde_json::Value, String> {
+async fn check_claude_installed(app_handle: tauri::AppHandle, db: State<'_, AppDatabase>) -> Result<serde_json::Value, String> {
     let shell = app_handle.shell();
     
-    // Try different command names
-    let cmd_names = ["claude-code", "claude", "claude-cli"];
+    // Check if WSL mode is enabled (only on Windows)
+    let use_wsl = if cfg!(windows) {
+        db.get_setting("use_wsl")?.unwrap_or_else(|| "false".to_string()) == "true"
+    } else {
+        false
+    };
     
-    for name in &cmd_names {
-        match shell.command(name).arg("--version").output().await {
+    if use_wsl {
+        // Check Claude installation via WSL
+        let claude_path = db.get_setting("claude_executable_path")?
+            .unwrap_or_else(|| "claude".to_string());
+        
+        let wsl_cmd = format!("{} --version", claude_path);
+        
+        match shell.command("wsl")
+            .args(&["-e", "bash", "-c", &wsl_cmd])
+            .output()
+            .await {
             Ok(output) => {
                 if output.status.success() {
                     let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
                     return Ok(serde_json::json!({
                         "installed": true,
                         "version": version,
-                        "command": name
+                        "command": claude_path,
+                        "via_wsl": true
                     }));
                 }
             }
-            Err(_) => continue,
+            Err(e) => {
+                return Ok(serde_json::json!({
+                    "installed": false,
+                    "version": null,
+                    "error": format!("WSL check failed: {}", e)
+                }));
+            }
+        }
+    } else {
+        // Non-WSL check (existing logic)
+        let cmd_names = ["claude-code", "claude", "claude-cli"];
+        
+        for name in &cmd_names {
+            match shell.command(name).arg("--version").output().await {
+                Ok(output) => {
+                    if output.status.success() {
+                        let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                        return Ok(serde_json::json!({
+                            "installed": true,
+                            "version": version,
+                            "command": name
+                        }));
+                    }
+                }
+                Err(_) => continue,
+            }
         }
     }
     
