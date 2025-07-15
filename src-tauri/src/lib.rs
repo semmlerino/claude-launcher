@@ -8,6 +8,7 @@ use std::fs;
 use std::env;
 use tauri::{Manager, State};
 use tauri_plugin_shell::ShellExt;
+use tauri_plugin_opener::OpenerExt;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -537,13 +538,11 @@ async fn launch_project(
             Ok(_) => {
                 info!("Created batch file: {:?}", batch_file);
                 
-                // Execute the batch file
-                let cmd = shell.command("cmd")
-                    .args(&["/c", batch_file.to_str().unwrap()]);
-                
-                match cmd.spawn() {
-                    Ok(_child) => {
-                        info!("Successfully launched Claude Code via WSL batch file");
+                // Use the opener plugin to launch the batch file
+                // This mimics double-clicking the file in Windows Explorer
+                match app_handle.opener().open_path(&batch_file, None::<&str>) {
+                    Ok(_) => {
+                        info!("Successfully opened batch file via system handler");
                         
                         // Clean up batch file after a delay
                         let batch_file_clone = batch_file.clone();
@@ -558,7 +557,7 @@ async fn launch_project(
                         }))
                     }
                     Err(e) => {
-                        warn!("Failed to execute batch file: {}", e);
+                        warn!("Failed to open batch file: {}", e);
                         let _ = fs::remove_file(&batch_file);
                         Err(format!("Failed to launch Claude Code via WSL: {}", e))
                     }
