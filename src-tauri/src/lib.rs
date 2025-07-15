@@ -506,8 +506,19 @@ async fn launch_project(
         // Escape single quotes in the path for shell safety
         let escaped_path = project.path.replace("'", "'\\''");
         
+        // Build command with debugging and error handling
         let mut wsl_cmd = format!(
-            "cd \\\"$(wslpath '{}')\\\" && {} --dangerously-skip-permissions",
+            "echo 'Claude Launcher - WSL Mode' && \
+             echo 'Project: {}' && \
+             echo 'Path: {}' && \
+             echo 'Converting path...' && \
+             wslpath='$(wslpath '{}')' && \
+             echo \"WSL Path: $wslpath\" && \
+             cd \"$wslpath\" && \
+             echo 'Launching Claude...' && \
+             {} --dangerously-skip-permissions",
+            project.name,
+            escaped_path,
             escaped_path,
             claude_path
         );
@@ -516,8 +527,13 @@ async fn launch_project(
             wsl_cmd.push_str(" --continue");
         }
         
+        // Add error handling and terminal persistence
         if keep_terminal {
-            wsl_cmd.push_str(" && exec bash");
+            wsl_cmd.push_str(" && echo 'Claude launched successfully!' && exec bash");
+        } else {
+            // Always show result and wait for user input
+            wsl_cmd.push_str(" && echo 'Claude launched successfully!' || echo 'Failed to launch Claude! Exit code: '$?");
+            wsl_cmd.push_str(" && read -p 'Press Enter to close this window...'");
         }
         
         // Use cmd.exe to open a new terminal window
@@ -529,6 +545,7 @@ async fn launch_project(
                 "/c",
                 "start",
                 &window_title,  // Window title
+                "",             // Empty quotes for program parameter (required for start syntax)
                 "wsl",
                 "-e",
                 "bash",
