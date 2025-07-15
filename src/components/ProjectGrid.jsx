@@ -77,21 +77,6 @@ const ProjectGrid = ({
 
   return (
     <Box ref={gridRef}>
-      {/* Recent Projects Section */}
-      {recentProjects && recentProjects.length > 0 && (
-        <Box sx={{ mb: 4 }}>
-          <Typography variant="h5" gutterBottom sx={{ mb: 2 }}>
-            Recent Projects
-          </Typography>
-          <Masonry columns={isSmallScreen ? 1 : 2} spacing={2}>
-            {recentProjects.map((project, index) => 
-              renderProjectCard(project, index)
-            )}
-          </Masonry>
-          <Divider sx={{ mt: 3 }} />
-        </Box>
-      )}
-
       {/* Pinned Projects Section */}
       {pinnedProjects.length > 0 && (
         <Box sx={{ mb: 4 }}>
@@ -100,7 +85,22 @@ const ProjectGrid = ({
           </Typography>
           <Masonry columns={isSmallScreen ? 1 : 2} spacing={2}>
             {pinnedProjects.map((project, index) => 
-              renderProjectCard(project, recentProjects.length + index)
+              renderProjectCard(project, index)
+            )}
+          </Masonry>
+          <Divider sx={{ mt: 3 }} />
+        </Box>
+      )}
+
+      {/* Recent Projects Section */}
+      {recentProjects && recentProjects.length > 0 && (
+        <Box sx={{ mb: 4 }}>
+          <Typography variant="h5" gutterBottom sx={{ mb: 2 }}>
+            Recent Projects
+          </Typography>
+          <Masonry columns={isSmallScreen ? 1 : 2} spacing={2}>
+            {recentProjects.map((project, index) => 
+              renderProjectCard(project, pinnedProjects.length + index)
             )}
           </Masonry>
           <Divider sx={{ mt: 3 }} />
@@ -130,7 +130,7 @@ const ProjectGrid = ({
             {unpinnedProjects.map((project, index) => 
               renderProjectCard(
                 project, 
-                recentProjects.length + pinnedProjects.length + index
+                pinnedProjects.length + recentProjects.length + index
               )
             )}
           </Masonry>
