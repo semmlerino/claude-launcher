@@ -250,7 +250,7 @@ vi.mock('@mui/material', () => ({
   // Form components
   Select: ({ children, value, onChange, ...props }) => {
     const React = require('react');
-    const { sx, label, ...domProps } = props;
+    const { sx, label, startAdornment, ...domProps } = props;
     return React.createElement('select', { 
       value, 
       onChange,
@@ -278,10 +278,14 @@ vi.mock('@mui/material', () => ({
     return open ? React.createElement('div', { role: 'menu', ...domProps }, children) : null;
   },
   
-  MenuItem: ({ children, ...props }) => {
+  MenuItem: ({ children, value, ...props }) => {
     const React = require('react');
     const { sx, ...domProps } = props;
-    return React.createElement('div', { role: 'menuitem', ...domProps }, children);
+    return React.createElement('option', { 
+      value, 
+      role: 'option',
+      ...domProps 
+    }, children);
   },
   
   ListItemIcon: ({ children, ...props }) => {
