@@ -25,6 +25,260 @@ vi.mock('@mui/lab', () => ({
   }
 }));
 
+// Mock Material UI components that cause hanging but keep semantic behavior
+vi.mock('@mui/material', () => ({
+  // Theme providers - essential for context
+  ThemeProvider: ({ children }) => children,
+  createTheme: (options = {}) => ({
+    palette: {
+      mode: 'light',
+      primary: { main: '#1976d2' },
+      secondary: { main: '#dc004e' },
+      background: { default: '#f5f5f5', paper: '#fff' },
+      text: { primary: '#000', secondary: '#666' },
+      error: { main: '#f44336' },
+      action: { hover: '#f5f5f5' },
+      divider: '#e0e0e0',
+      ...(options.palette || {})
+    },
+    spacing: (factor) => `${8 * factor}px`,
+    shape: { borderRadius: 4 },
+    ...options
+  }),
+  useTheme: () => ({ 
+    palette: { mode: 'light' }, 
+    spacing: (factor) => `${8 * factor}px`,
+    shape: { borderRadius: 4 }
+  }),
+  
+  // Basic components with semantic behavior
+  Box: require('react').forwardRef(({ children, component = 'div', ...props }, ref) => {
+    const React = require('react');
+    const { sx, ...domProps } = props;
+    return React.createElement(component, { ...domProps, ref }, children);
+  }),
+  
+  Typography: ({ children, variant, component, ...props }) => {
+    const React = require('react');
+    let tag = component || 'p';
+    if (variant && !component) {
+      switch (variant) {
+        case 'h1': tag = 'h1'; break;
+        case 'h2': tag = 'h2'; break;
+        case 'h3': tag = 'h3'; break;
+        case 'h4': tag = 'h4'; break;
+        case 'h5': tag = 'h5'; break;
+        case 'h6': tag = 'h6'; break;
+        case 'caption': tag = 'small'; break;
+        default: tag = 'p';
+      }
+    }
+    const { sx, color, gutterBottom, noWrap, fontWeight, fontStyle, ...domProps } = props;
+    return React.createElement(tag, domProps, children);
+  },
+  
+  Button: ({ children, startIcon, endIcon, ...props }) => {
+    const React = require('react');
+    const { sx, color, variant, ...domProps } = props;
+    return React.createElement('button', domProps, 
+      startIcon ? React.createElement(React.Fragment, {}, startIcon, ' ', children) : children
+    );
+  },
+  
+  // Form components with semantic roles
+  TextField: ({ InputProps, inputProps, ...props }) => {
+    const React = require('react');
+    const { sx, label, fullWidth, multiline, rows, variant, size, ...domProps } = props;
+    const finalProps = { ...domProps, ...inputProps };
+    return React.createElement(multiline ? 'textarea' : 'input', finalProps);
+  },
+  
+  Checkbox: (props) => {
+    const React = require('react');
+    const { sx, ...domProps } = props;
+    return React.createElement('input', { type: 'checkbox', ...domProps });
+  },
+  
+  IconButton: ({ children, ...props }) => {
+    const React = require('react');
+    const { sx, color, size, edge, ...domProps } = props;
+    return React.createElement('button', domProps, children);
+  },
+  
+  // Card components
+  Card: ({ children, ...props }) => {
+    const React = require('react');
+    const { sx, ...domProps } = props;
+    return React.createElement('div', domProps, children);
+  },
+  
+  CardContent: ({ children, ...props }) => {
+    const React = require('react');
+    const { sx, ...domProps } = props;
+    return React.createElement('div', domProps, children);
+  },
+  
+  CardActions: ({ children, ...props }) => {
+    const React = require('react');
+    const { sx, ...domProps } = props;
+    return React.createElement('div', domProps, children);
+  },
+  
+  // Other essential components
+  Chip: ({ label, ...props }) => {
+    const React = require('react');
+    const { sx, clickable, color, size, variant, ...domProps } = props;
+    return React.createElement('span', domProps, label);
+  },
+  
+  CircularProgress: (props) => {
+    const React = require('react');
+    const { sx, ...domProps } = props;
+    return React.createElement('div', { role: 'progressbar', ...domProps });
+  },
+  
+  FormControlLabel: ({ control, label, ...props }) => {
+    const React = require('react');
+    const { sx, ...domProps } = props;
+    return React.createElement('label', domProps, 
+      React.createElement(React.Fragment, {}, control, ' ', label)
+    );
+  },
+  
+  Tooltip: ({ children, title, ...props }) => {
+    // Just return children without tooltip behavior
+    return children;
+  },
+  
+  Divider: (props) => {
+    const React = require('react');
+    const { sx, ...domProps } = props;
+    return React.createElement('hr', domProps);
+  },
+  
+  // Dialog components
+  Dialog: ({ children, open, ...props }) => {
+    const React = require('react');
+    const { sx, ...domProps } = props;
+    return open ? React.createElement('div', { role: 'dialog', ...domProps }, children) : null;
+  },
+  
+  DialogTitle: ({ children, ...props }) => {
+    const React = require('react');
+    const { sx, ...domProps } = props;
+    return React.createElement('h2', domProps, children);
+  },
+  
+  DialogContent: ({ children, ...props }) => {
+    const React = require('react');
+    const { sx, ...domProps } = props;
+    return React.createElement('div', domProps, children);
+  },
+  
+  DialogActions: ({ children, ...props }) => {
+    const React = require('react');
+    const { sx, ...domProps } = props;
+    return React.createElement('div', domProps, children);
+  },
+  
+  // Layout components
+  Grid: ({ children, ...props }) => {
+    const React = require('react');
+    const { sx, container, item, xs, sm, md, lg, xl, spacing, ...domProps } = props;
+    return React.createElement('div', domProps, children);
+  },
+  
+  Paper: ({ children, ...props }) => {
+    const React = require('react');
+    const { sx, elevation, variant, ...domProps } = props;
+    return React.createElement('div', domProps, children);
+  },
+  
+  InputAdornment: ({ children, position, ...props }) => {
+    const React = require('react');
+    const { sx, ...domProps } = props;
+    return React.createElement('div', domProps, children);
+  },
+  
+  // Keep these for now - may cause issues if removed
+  Menu: ({ children, open, ...props }) => {
+    const React = require('react');
+    const { sx, anchorPosition, anchorReference, ...domProps } = props;
+    return open ? React.createElement('div', { role: 'menu', ...domProps }, children) : null;
+  },
+  
+  MenuItem: ({ children, ...props }) => {
+    const React = require('react');
+    const { sx, ...domProps } = props;
+    return React.createElement('div', { role: 'menuitem', ...domProps }, children);
+  },
+  
+  ListItemIcon: ({ children, ...props }) => {
+    const React = require('react');
+    const { sx, ...domProps } = props;
+    return React.createElement('span', domProps, children);
+  },
+  
+  ListItemText: ({ children, ...props }) => {
+    const React = require('react');
+    const { sx, ...domProps } = props;
+    return React.createElement('span', domProps, children);
+  },
+  
+  // Default export for anything else
+  default: ({ children }) => children
+}));
+
+// Mock MUI Icons with minimal implementation
+vi.mock('@mui/icons-material', () => ({
+  // Icon components that render as simple spans with descriptive text
+  Star: (props) => {
+    const React = require('react');
+    return React.createElement('span', { ...props, 'data-testid': 'star-icon' }, '★');
+  },
+  StarBorder: (props) => {
+    const React = require('react');
+    return React.createElement('span', { ...props, 'data-testid': 'star-border-icon' }, '☆');
+  },
+  Launch: (props) => {
+    const React = require('react');
+    return React.createElement('span', { ...props, 'data-testid': 'launch-icon' }, '↗');
+  },
+  Edit: (props) => {
+    const React = require('react');
+    return React.createElement('span', { ...props, 'data-testid': 'edit-icon' }, '✎');
+  },
+  Delete: (props) => {
+    const React = require('react');
+    return React.createElement('span', { ...props, 'data-testid': 'delete-icon' }, '🗑');
+  },
+  Check: (props) => {
+    const React = require('react');
+    return React.createElement('span', { ...props, 'data-testid': 'check-icon' }, '✓');
+  },
+  Close: (props) => {
+    const React = require('react');
+    return React.createElement('span', { ...props, 'data-testid': 'close-icon' }, '✕');
+  },
+  Folder: (props) => {
+    const React = require('react');
+    return React.createElement('span', { ...props, 'data-testid': 'folder-icon' }, '📁');
+  },
+  Notes: (props) => {
+    const React = require('react');
+    return React.createElement('span', { ...props, 'data-testid': 'notes-icon' }, '📝');
+  },
+  Palette: (props) => {
+    const React = require('react');
+    return React.createElement('span', { ...props, 'data-testid': 'palette-icon' }, '🎨');
+  },
+  // Default fallback for other icons
+  default: (props) => {
+    const React = require('react');
+    return React.createElement('span', { ...props, 'data-testid': 'icon' }, '●');
+  }
+}));
+
 // Mock console methods that might be noisy in tests
 global.console = {
   ...console,
