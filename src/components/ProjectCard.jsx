@@ -63,8 +63,8 @@ const ProjectCard = ({ project, onUpdate, onLaunch, onDelete, onPin, onTagClick,
   const handleContextMenu = (event) => {
     event.preventDefault();
     setContextMenu({
-      mouseX: event.clientX - 2,
-      mouseY: event.clientY - 4,
+      left: event.clientX - 2,
+      top: event.clientY - 4,
     });
   };
 
