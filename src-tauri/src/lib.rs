@@ -540,7 +540,7 @@ async fn launch_project(
                 
                 // Use the opener plugin to launch the batch file
                 // This mimics double-clicking the file in Windows Explorer
-                match app_handle.opener().open_path(&batch_file, None::<&str>) {
+                match app_handle.opener().open_path(batch_file.to_str().unwrap(), None::<&str>) {
                     Ok(_) => {
                         info!("Successfully opened batch file via system handler");
                         
