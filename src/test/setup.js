@@ -51,6 +51,8 @@ vi.mock('@mui/material', () => ({
     shape: { borderRadius: 4 }
   }),
   
+  useMediaQuery: () => false,
+  
   // Basic components with semantic behavior
   Box: require('react').forwardRef(({ children, component = 'div', ...props }, ref) => {
     const React = require('react');
@@ -175,6 +177,12 @@ vi.mock('@mui/material', () => ({
     return React.createElement('div', domProps, children);
   },
   
+  DialogContentText: ({ children, ...props }) => {
+    const React = require('react');
+    const { sx, ...domProps } = props;
+    return React.createElement('p', domProps, children);
+  },
+  
   DialogActions: ({ children, ...props }) => {
     const React = require('react');
     const { sx, ...domProps } = props;
@@ -198,6 +206,69 @@ vi.mock('@mui/material', () => ({
     const React = require('react');
     const { sx, ...domProps } = props;
     return React.createElement('div', domProps, children);
+  },
+  
+  // App-specific components
+  CssBaseline: () => null,
+  
+  AppBar: ({ children, ...props }) => {
+    const React = require('react');
+    const { sx, position, ...domProps } = props;
+    return React.createElement('header', domProps, children);
+  },
+  
+  Toolbar: ({ children, ...props }) => {
+    const React = require('react');
+    const { sx, ...domProps } = props;
+    return React.createElement('div', domProps, children);
+  },
+  
+  Container: ({ children, ...props }) => {
+    const React = require('react');
+    const { sx, maxWidth, ...domProps } = props;
+    return React.createElement('div', domProps, children);
+  },
+  
+  Fab: ({ children, ...props }) => {
+    const React = require('react');
+    const { sx, color, size, ...domProps } = props;
+    return React.createElement('button', domProps, children);
+  },
+  
+  Snackbar: ({ children, open, ...props }) => {
+    const React = require('react');
+    const { sx, autoHideDuration, anchorOrigin, ...domProps } = props;
+    return open ? React.createElement('div', domProps, children) : null;
+  },
+  
+  Alert: ({ children, ...props }) => {
+    const React = require('react');
+    const { sx, severity, ...domProps } = props;
+    return React.createElement('div', { role: 'alert', ...domProps }, children);
+  },
+  
+  // Form components
+  Select: ({ children, value, onChange, ...props }) => {
+    const React = require('react');
+    const { sx, label, ...domProps } = props;
+    return React.createElement('select', { 
+      value, 
+      onChange,
+      ...domProps,
+      role: 'combobox'
+    }, children);
+  },
+  
+  FormControl: ({ children, ...props }) => {
+    const React = require('react');
+    const { sx, ...domProps } = props;
+    return React.createElement('div', domProps, children);
+  },
+  
+  InputLabel: ({ children, ...props }) => {
+    const React = require('react');
+    const { sx, ...domProps } = props;
+    return React.createElement('label', domProps, children);
   },
   
   // Keep these for now - may cause issues if removed
@@ -271,6 +342,35 @@ vi.mock('@mui/icons-material', () => ({
   Palette: (props) => {
     const React = require('react');
     return React.createElement('span', { ...props, 'data-testid': 'palette-icon' }, '🎨');
+  },
+  // App-specific icons
+  Add: (props) => {
+    const React = require('react');
+    return React.createElement('span', { ...props, 'data-testid': 'add-icon' }, '+');
+  },
+  Search: (props) => {
+    const React = require('react');
+    return React.createElement('span', { ...props, 'data-testid': 'search-icon' }, '🔍');
+  },
+  DarkMode: (props) => {
+    const React = require('react');
+    return React.createElement('span', { ...props, 'data-testid': 'dark-mode-icon' }, '🌙');
+  },
+  LightMode: (props) => {
+    const React = require('react');
+    return React.createElement('span', { ...props, 'data-testid': 'light-mode-icon' }, '☀️');
+  },
+  Refresh: (props) => {
+    const React = require('react');
+    return React.createElement('span', { ...props, 'data-testid': 'refresh-icon' }, '🔄');
+  },
+  Clear: (props) => {
+    const React = require('react');
+    return React.createElement('span', { ...props, 'data-testid': 'clear-icon' }, '✕');
+  },
+  Sort: (props) => {
+    const React = require('react');
+    return React.createElement('span', { ...props, 'data-testid': 'sort-icon' }, '↕');
   },
   // Default fallback for other icons
   default: (props) => {
