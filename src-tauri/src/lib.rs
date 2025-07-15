@@ -17,6 +17,7 @@ struct Project {
     notes: String,
     pinned: bool,
     last_used: Option<String>,
+    background_color: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -25,6 +26,7 @@ struct ProjectUpdate {
     tags: Option<Vec<String>>,
     notes: Option<String>,
     pinned: Option<bool>,
+    background_color: Option<String>,
 }
 
 struct AppDatabase {
@@ -48,12 +50,13 @@ impl AppDatabase {
         conn.execute(
             "CREATE TABLE IF NOT EXISTS projects (
                 id TEXT PRIMARY KEY,
-                path TEXT NOT NULL,
+                path TEXT NOT NULL UNIQUE,
                 name TEXT NOT NULL,
                 tags TEXT,
                 notes TEXT,
                 pinned BOOLEAN DEFAULT 0,
-                last_used TEXT
+                last_used TEXT,
+                background_color TEXT
             )",
             [],
         )?;
@@ -76,6 +79,49 @@ impl AppDatabase {
             "CREATE INDEX IF NOT EXISTS idx_pinned ON projects(pinned DESC)",
             [],
         )?;
+        
+        // Add unique constraint on path if it doesn't exist (for existing databases)
+        // First check if the constraint already exists
+        let has_unique_constraint: bool = conn
+            .query_row(
+                "SELECT COUNT(*) > 0 FROM sqlite_master 
+                 WHERE type = 'index' AND sql LIKE '%UNIQUE%' AND sql LIKE '%path%'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(false);
+        
+        if !has_unique_constraint {
+            info!("Adding UNIQUE constraint on path column");
+            // Create a unique index to enforce the constraint
+            match conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_path ON projects(path)",
+                [],
+            ) {
+                Ok(_) => info!("Successfully added UNIQUE constraint on path"),
+                Err(e) => warn!("Could not add UNIQUE constraint on path: {}. This may be due to duplicate paths.", e),
+            }
+        }
+
+        // Add background_color column if it doesn't exist (for existing databases)
+        let has_background_color: bool = conn
+            .query_row(
+                "SELECT COUNT(*) > 0 FROM pragma_table_info('projects') WHERE name = 'background_color'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(false);
+        
+        if !has_background_color {
+            info!("Adding background_color column to projects table");
+            match conn.execute(
+                "ALTER TABLE projects ADD COLUMN background_color TEXT",
+                [],
+            ) {
+                Ok(_) => info!("Successfully added background_color column"),
+                Err(e) => warn!("Could not add background_color column: {}", e),
+            }
+        }
         
         Ok(AppDatabase {
             conn: Mutex::new(conn),
@@ -107,19 +153,6 @@ impl AppDatabase {
         info!("Adding new project at path: {}", path);
         let conn = self.conn.lock().unwrap();
         
-        // Check if project already exists
-        let exists: bool = conn
-            .query_row(
-                "SELECT EXISTS(SELECT 1 FROM projects WHERE path = ?1)",
-                params![&path],
-                |row| row.get(0),
-            )
-            .map_err(|e| e.to_string())?;
-        
-        if exists {
-            return Err("Project already exists".to_string());
-        }
-        
         let id = Uuid::new_v4().to_string();
         let name = std::path::Path::new(&path)
             .file_name()
@@ -127,19 +160,10 @@ impl AppDatabase {
             .unwrap_or("Unnamed")
             .to_string();
         
-        let project = Project {
-            id: id.clone(),
-            path: path.clone(),
-            name: name.clone(),
-            tags: vec![],
-            notes: String::new(),
-            pinned: false,
-            last_used: None,
-        };
-        
-        conn.execute(
-            "INSERT INTO projects (id, path, name, tags, notes, pinned, last_used) 
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        // Try to insert the project
+        let result = conn.execute(
+            "INSERT INTO projects (id, path, name, tags, notes, pinned, last_used, background_color) 
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 &id,
                 &path,
@@ -147,12 +171,53 @@ impl AppDatabase {
                 "[]",
                 "",
                 false,
+                Option::<String>::None,
                 Option::<String>::None
             ],
-        )
-        .map_err(|e| e.to_string())?;
+        );
         
-        Ok(project)
+        match result {
+            Ok(_) => {
+                // Successfully inserted
+                Ok(Project {
+                    id: id.clone(),
+                    path: path.clone(),
+                    name: name.clone(),
+                    tags: vec![],
+                    notes: String::new(),
+                    pinned: false,
+                    last_used: None,
+                    background_color: None,
+                })
+            }
+            Err(rusqlite::Error::SqliteFailure(error, _)) 
+                if error.code == rusqlite::ErrorCode::ConstraintViolation => {
+                // Project already exists, fetch and return it
+                info!("Project already exists at path: {}, returning existing project", path);
+                conn.query_row(
+                    "SELECT id, path, name, tags, notes, pinned, last_used, background_color 
+                     FROM projects WHERE path = ?1",
+                    params![&path],
+                    |row| {
+                        Ok(Project {
+                            id: row.get(0)?,
+                            path: row.get(1)?,
+                            name: row.get(2)?,
+                            tags: serde_json::from_str(row.get::<_, String>(3)?.as_str()).unwrap_or_default(),
+                            notes: row.get(4)?,
+                            pinned: row.get(5)?,
+                            last_used: row.get(6)?,
+                            background_color: row.get(7)?,
+                        })
+                    },
+                )
+                .map_err(|e| e.to_string())
+            }
+            Err(e) => {
+                // Other error
+                Err(e.to_string())
+            }
+        }
     }
     
     fn get_all_projects(&self) -> Result<Vec<Project>, String> {
@@ -160,7 +225,7 @@ impl AppDatabase {
         
         let mut stmt = conn
             .prepare(
-                "SELECT id, path, name, tags, notes, pinned, last_used 
+                "SELECT id, path, name, tags, notes, pinned, last_used, background_color 
                  FROM projects 
                  ORDER BY pinned DESC, last_used DESC NULLS LAST",
             )
@@ -176,6 +241,7 @@ impl AppDatabase {
                     notes: row.get(4)?,
                     pinned: row.get(5)?,
                     last_used: row.get(6)?,
+                    background_color: row.get(7)?,
                 })
             })
             .map_err(|e| e.to_string())?
@@ -190,7 +256,7 @@ impl AppDatabase {
         
         let mut stmt = conn
             .prepare(
-                "SELECT id, path, name, tags, notes, pinned, last_used 
+                "SELECT id, path, name, tags, notes, pinned, last_used, background_color 
                  FROM projects 
                  WHERE last_used IS NOT NULL
                  ORDER BY last_used DESC
@@ -208,6 +274,7 @@ impl AppDatabase {
                     notes: row.get(4)?,
                     pinned: row.get(5)?,
                     last_used: row.get(6)?,
+                    background_color: row.get(7)?,
                 })
             })
             .map_err(|e| e.to_string())?
@@ -218,49 +285,57 @@ impl AppDatabase {
     }
     
     fn update_project(&self, id: String, updates: ProjectUpdate) -> Result<Project, String> {
-        let conn = self.conn.lock().unwrap();
+        // Execute update in a scoped block to release the lock
+        {
+            let conn = self.conn.lock().unwrap();
+            
+            // Build dynamic update query
+            let mut sql_parts = vec![];
+            let mut params: Vec<Box<dyn rusqlite::ToSql>> = vec![];
+            
+            if let Some(name) = &updates.name {
+                sql_parts.push("name = ?");
+                params.push(Box::new(name.clone()));
+            }
+            
+            if let Some(tags) = &updates.tags {
+                sql_parts.push("tags = ?");
+                params.push(Box::new(serde_json::to_string(tags).unwrap()));
+            }
+            
+            if let Some(notes) = &updates.notes {
+                sql_parts.push("notes = ?");
+                params.push(Box::new(notes.clone()));
+            }
+            
+            if let Some(pinned) = &updates.pinned {
+                sql_parts.push("pinned = ?");
+                params.push(Box::new(*pinned));
+            }
+            
+            if let Some(background_color) = &updates.background_color {
+                sql_parts.push("background_color = ?");
+                params.push(Box::new(background_color.clone()));
+            }
+            
+            if sql_parts.is_empty() {
+                return Err("No updates provided".to_string());
+            }
+            
+            params.push(Box::new(id.clone()));
+            
+            let sql = format!(
+                "UPDATE projects SET {} WHERE id = ?",
+                sql_parts.join(", ")
+            );
+            
+            let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+            
+            conn.execute(&sql, param_refs.as_slice())
+                .map_err(|e| e.to_string())?;
+        } // Lock is released here
         
-        // Build dynamic update query
-        let mut sql_parts = vec![];
-        let mut params: Vec<Box<dyn rusqlite::ToSql>> = vec![];
-        
-        if let Some(name) = &updates.name {
-            sql_parts.push("name = ?");
-            params.push(Box::new(name.clone()));
-        }
-        
-        if let Some(tags) = &updates.tags {
-            sql_parts.push("tags = ?");
-            params.push(Box::new(serde_json::to_string(tags).unwrap()));
-        }
-        
-        if let Some(notes) = &updates.notes {
-            sql_parts.push("notes = ?");
-            params.push(Box::new(notes.clone()));
-        }
-        
-        if let Some(pinned) = &updates.pinned {
-            sql_parts.push("pinned = ?");
-            params.push(Box::new(*pinned));
-        }
-        
-        if sql_parts.is_empty() {
-            return Err("No updates provided".to_string());
-        }
-        
-        params.push(Box::new(id.clone()));
-        
-        let sql = format!(
-            "UPDATE projects SET {} WHERE id = ?",
-            sql_parts.join(", ")
-        );
-        
-        let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
-        
-        conn.execute(&sql, param_refs.as_slice())
-            .map_err(|e| e.to_string())?;
-        
-        // Fetch and return updated project
+        // Fetch and return updated project - now can acquire lock again
         self.get_project_by_id(&id)
     }
     
@@ -268,7 +343,7 @@ impl AppDatabase {
         let conn = self.conn.lock().unwrap();
         
         conn.query_row(
-            "SELECT id, path, name, tags, notes, pinned, last_used 
+            "SELECT id, path, name, tags, notes, pinned, last_used, background_color 
              FROM projects WHERE id = ?1",
             params![id],
             |row| {
@@ -280,6 +355,7 @@ impl AppDatabase {
                     notes: row.get(4)?,
                     pinned: row.get(5)?,
                     last_used: row.get(6)?,
+                    background_color: row.get(7)?,
                 })
             },
         )
@@ -582,4 +658,276 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    
+    /// Helper to create a test database
+    fn create_test_db() -> Result<AppDatabase, Box<dyn std::error::Error>> {
+        // Use in-memory database for tests
+        let conn = Connection::open_in_memory()?;
+        
+        // Initialize tables with the same schema as production
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS projects (
+                id TEXT PRIMARY KEY,
+                path TEXT NOT NULL UNIQUE,
+                name TEXT NOT NULL,
+                tags TEXT NOT NULL,
+                notes TEXT NOT NULL,
+                pinned BOOLEAN NOT NULL DEFAULT 0,
+                last_used TEXT,
+                background_color TEXT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )",
+            [],
+        )?;
+        
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )",
+            [],
+        )?;
+        
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_projects_last_used ON projects(last_used)",
+            [],
+        )?;
+        
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_projects_pinned ON projects(pinned)",
+            [],
+        )?;
+        
+        Ok(AppDatabase {
+            conn: Mutex::new(conn),
+        })
+    }
+    
+    #[test]
+    fn test_project_serialization() {
+        let project = Project {
+            id: "test-id".to_string(),
+            path: "/test/path".to_string(),
+            name: "Test Project".to_string(),
+            tags: vec!["tag1".to_string(), "tag2".to_string()],
+            notes: "Test notes".to_string(),
+            pinned: true,
+            last_used: Some("2024-01-01T00:00:00Z".to_string()),
+            background_color: Some("#ff5722".to_string()),
+        };
+        
+        // Test serialization
+        let json = serde_json::to_string(&project).unwrap();
+        assert!(json.contains("test-id"));
+        assert!(json.contains("Test Project"));
+        
+        // Test deserialization
+        let deserialized: Project = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.id, project.id);
+        assert_eq!(deserialized.name, project.name);
+        assert_eq!(deserialized.tags, project.tags);
+    }
+    
+    #[test]
+    fn test_add_project() {
+        let db = create_test_db().unwrap();
+        let path = "/test/project".to_string();
+        
+        // Add project
+        let result = db.add_project(path.clone());
+        assert!(result.is_ok());
+        
+        let project = result.unwrap();
+        assert_eq!(project.path, path);
+        assert_eq!(project.name, "project");
+        assert!(!project.pinned);
+        assert!(project.last_used.is_none());
+    }
+    
+    #[test]
+    fn test_add_duplicate_project() {
+        let db = create_test_db().unwrap();
+        let path = "/test/project".to_string();
+        
+        // Add project first time
+        let result1 = db.add_project(path.clone());
+        assert!(result1.is_ok());
+        let project1 = result1.unwrap();
+        
+        // Try to add same project again - should return the existing project
+        let result2 = db.add_project(path);
+        assert!(result2.is_ok());
+        let project2 = result2.unwrap();
+        
+        // Should be the same project
+        assert_eq!(project1.id, project2.id);
+        assert_eq!(project1.path, project2.path);
+    }
+    
+    #[test]
+    fn test_get_projects() {
+        let db = create_test_db().unwrap();
+        
+        // Initially empty
+        let projects = db.get_all_projects().unwrap();
+        assert_eq!(projects.len(), 0);
+        
+        // Add some projects
+        db.add_project("/test/project1".to_string()).unwrap();
+        db.add_project("/test/project2".to_string()).unwrap();
+        
+        let projects = db.get_all_projects().unwrap();
+        assert_eq!(projects.len(), 2);
+    }
+    
+    #[test]
+    fn test_update_project() {
+        let db = create_test_db().unwrap();
+        
+        // Add a project
+        let project = db.add_project("/test/project".to_string()).unwrap();
+        
+        // Update it
+        let updates = ProjectUpdate {
+            name: Some("Updated Name".to_string()),
+            tags: Some(vec!["new-tag".to_string()]),
+            notes: Some("New notes".to_string()),
+            pinned: Some(true),
+            background_color: Some("#2196f3".to_string()),
+        };
+        
+        let result = db.update_project(project.id.clone(), updates);
+        assert!(result.is_ok());
+        
+        // Verify updates
+        let updated = result.unwrap();
+        
+        assert_eq!(updated.name, "Updated Name");
+        assert_eq!(updated.tags, vec!["new-tag"]);
+        assert_eq!(updated.notes, "New notes");
+        assert!(updated.pinned);
+        assert_eq!(updated.background_color, Some("#2196f3".to_string()));
+    }
+    
+    #[test]
+    fn test_delete_project() {
+        let db = create_test_db().unwrap();
+        
+        // Add a project
+        let project = db.add_project("/test/project".to_string()).unwrap();
+        
+        // Delete it
+        let result = db.delete_project(&project.id);
+        assert!(result.is_ok());
+        
+        // Verify it's gone
+        let projects = db.get_all_projects().unwrap();
+        assert_eq!(projects.len(), 0);
+    }
+    
+    #[test]
+    fn test_get_recent_projects() {
+        let db = create_test_db().unwrap();
+        
+        // Add projects with different last_used times
+        let project1 = db.add_project("/test/project1".to_string()).unwrap();
+        let project2 = db.add_project("/test/project2".to_string()).unwrap();
+        let project3 = db.add_project("/test/project3".to_string()).unwrap();
+        
+        // Update last_used times
+        let conn = db.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE projects SET last_used = ? WHERE id = ?",
+            params!["2024-01-03T00:00:00Z", project3.id],
+        ).unwrap();
+        conn.execute(
+            "UPDATE projects SET last_used = ? WHERE id = ?",
+            params!["2024-01-02T00:00:00Z", project2.id],
+        ).unwrap();
+        conn.execute(
+            "UPDATE projects SET last_used = ? WHERE id = ?",
+            params!["2024-01-01T00:00:00Z", project1.id],
+        ).unwrap();
+        drop(conn);
+        
+        // Get recent projects
+        let recent = db.get_recent_projects(2).unwrap();
+        assert_eq!(recent.len(), 2);
+        assert_eq!(recent[0].path, "/test/project3");
+        assert_eq!(recent[1].path, "/test/project2");
+    }
+    
+    #[test]
+    fn test_settings() {
+        let db = create_test_db().unwrap();
+        
+        // Initially no setting
+        let value = db.get_setting("test_key").unwrap();
+        assert!(value.is_none());
+        
+        // Set a value
+        db.set_setting("test_key", "test_value").unwrap();
+        
+        // Get the value
+        let value = db.get_setting("test_key").unwrap();
+        assert_eq!(value, Some("test_value".to_string()));
+        
+        // Update the value
+        db.set_setting("test_key", "new_value").unwrap();
+        
+        let value = db.get_setting("test_key").unwrap();
+        assert_eq!(value, Some("new_value".to_string()));
+    }
+    
+    #[test]
+    fn test_pinned_projects_ordering() {
+        let db = create_test_db().unwrap();
+        
+        // Add projects
+        let _project1 = db.add_project("/test/project1".to_string()).unwrap();
+        let project2 = db.add_project("/test/project2".to_string()).unwrap();
+        
+        // Pin project2
+        let updates = ProjectUpdate {
+            name: None,
+            tags: None,
+            notes: None,
+            pinned: Some(true),
+            background_color: None,
+        };
+        db.update_project(project2.id, updates).unwrap();
+        
+        // Get all projects - pinned should come first
+        let projects = db.get_all_projects().unwrap();
+        assert_eq!(projects[0].path, "/test/project2");
+        assert_eq!(projects[1].path, "/test/project1");
+    }
+    
+    #[test]
+    fn test_tag_serialization() {
+        let db = create_test_db().unwrap();
+        
+        // Add project with multiple tags
+        let project = db.add_project("/test/project".to_string()).unwrap();
+        let updates = ProjectUpdate {
+            name: None,
+            tags: Some(vec!["tag1".to_string(), "tag2".to_string(), "tag3".to_string()]),
+            notes: None,
+            pinned: None,
+            background_color: None,
+        };
+        let updated = db.update_project(project.id.clone(), updates).unwrap();
+        
+        // Verify tags
+        assert_eq!(updated.tags.len(), 3);
+        assert!(updated.tags.contains(&"tag1".to_string()));
+        assert!(updated.tags.contains(&"tag2".to_string()));
+        assert!(updated.tags.contains(&"tag3".to_string()));
+    }
 }

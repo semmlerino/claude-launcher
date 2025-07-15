@@ -129,9 +129,28 @@ If projects aren't saving:
 2. Delete `projects.db` to reset the database
 3. Restart the application
 
+## Testing
+
+The project includes comprehensive unit and integration tests. See [TESTING.md](TESTING.md) for detailed testing documentation.
+
+```bash
+# Run frontend tests
+npm test
+
+# Run backend tests
+npm run test:rust
+
+# Run all tests with coverage
+npm run test:coverage
+```
+
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Contributions are welcome! Please feel free to submit a Pull Request. Make sure to:
+1. Add tests for new features
+2. Run the test suite before submitting
+3. Follow the existing code style
+4. Update documentation as needed
 
 ## License
 

@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+coverage/
+
+# Rust/Tauri
+src-tauri/
+
+# Git
+.git/
+.github/
+
+# Logs
+*.log
+
+# IDE
+.vscode/
+.idea/
+
+# Lock files
+package-lock.json
+pnpm-lock.yaml
+yarn.lock

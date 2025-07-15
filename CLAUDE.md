@@ -16,6 +16,19 @@ npm run build
 npm run tauri build
 ```
 
+### Testing
+```bash
+# Run frontend tests
+npm test                  # Run all tests in watch mode
+npm test -- --run        # Run all tests once
+npm test:ui              # Run tests with UI
+npm test:coverage        # Run tests with coverage
+
+# Run backend tests (requires Rust in PATH)
+export PATH="$HOME/.cargo/bin:$PATH" && npm run test:rust
+# Or directly: cargo test
+```
+
 ### WSL Environment Setup
 ```bash
 # Add Rust to PATH (required for WSL)

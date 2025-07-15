@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { info, error as logError, warn, debug } from '@tauri-apps/plugin-log';
@@ -88,6 +88,7 @@ function App() {
   const [recentProjects, setRecentProjects] = useState([]);
   const [filteredProjects, setFilteredProjects] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [activeTags, setActiveTags] = useState([]);
   const [loading, setLoading] = useState(true);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' });
@@ -95,6 +96,15 @@ function App() {
   const [dragOver, setDragOver] = useState(false);
   const [selectedProjectIndex, setSelectedProjectIndex] = useState(0);
   const [sortOption, setSortOption] = useState('recent');
+  const [loadingOperations, setLoadingOperations] = useState({
+    add: false,
+    launch: null, // stores projectId when launching
+    delete: null, // stores projectId when deleting
+    update: null, // stores projectId when updating
+    pin: null,    // stores projectId when pinning/unpinning
+  });
+  const [isInitialized, setIsInitialized] = useState(false);
+  const initializingRef = useRef(false);
   const dropZoneRef = useRef(null);
 
   // Create theme based on dark mode preference
@@ -133,22 +143,58 @@ function App() {
     }
   };
 
+  // Load theme preference
+  const loadThemePreference = async () => {
+    try {
+      const savedTheme = await invoke('get_setting', { key: 'theme_preference' });
+      if (savedTheme === 'light' || savedTheme === 'dark') {
+        setDarkMode(savedTheme === 'dark');
+      }
+    } catch (error) {
+      // Use system preference if loading fails
+      info('Using system theme preference');
+    }
+  };
+
   // Initialize the app
   useEffect(() => {
     const init = async () => {
+      // Prevent multiple simultaneous initializations
+      if (initializingRef.current || isInitialized) {
+        info('Initialization already in progress or completed, skipping...');
+        return;
+      }
+      
+      initializingRef.current = true;
+      
       try {
         setLoading(true);
+        info('Starting application initialization...');
+        
+        // Initialize database
         await invoke('init_database');
-        await loadProjects();
-        await loadSortPreference();
-        await checkClaudeInstalled();
+        
+        // Load all data in parallel
+        await Promise.all([
+          loadProjects(),
+          loadSortPreference(),
+          loadThemePreference(),
+          checkClaudeInstalled()
+        ]);
+        
+        setIsInitialized(true);
+        info('Application initialized successfully');
       } catch (error) {
         logError(`Failed to initialize: ${error}`);
         showSnackbar(`Failed to initialize: ${error}`, 'error');
+        
+        // Reset initialization flag on error to allow retry
+        initializingRef.current = false;
       } finally {
         setLoading(false);
       }
     };
+    
     init();
   }, []);
 
@@ -167,27 +213,8 @@ function App() {
         console.log('Dropped paths:', paths);
         
         for (const path of paths) {
-          try {
-            // Add the project directly - the backend will verify it's a valid directory
-            console.log(`Adding dropped path: ${path}`);
-            info(`Adding dropped path: ${path}`);
-            await invoke('add_project', {
-              path,
-              name: path.split(/[\\/]/).pop() || 'Unnamed Project',
-              tags: [],
-              notes: '',
-              pinned: false,
-            });
-            showSnackbar('Project added successfully!', 'success');
-          } catch (error) {
-            console.error(`Failed to add dropped project: ${error}`);
-            logError(`Failed to add dropped project: ${error}`);
-            showSnackbar(`Failed to add project: ${error}`, 'error');
-          }
+          await addProjectByPath(path);
         }
-        
-        // Reload projects to show the new additions
-        await loadProjects();
       });
       
       console.log('Tauri drag-drop listener set up successfully');
@@ -213,7 +240,6 @@ function App() {
       ]);
       setProjects(allProjects);
       setRecentProjects(recent);
-      setFilteredProjects(allProjects);
       info(`Loaded ${allProjects.length} projects`);
     } catch (error) {
       logError(`Failed to load projects: ${error}`);
@@ -233,8 +259,17 @@ function App() {
     }
   };
 
-  // Filter and sort projects based on search query, active tags, and sort option
+  // Debounce search query
   useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Memoize filtered and sorted projects
+  const filteredAndSortedProjects = useMemo(() => {
     let filtered = projects;
     
     // Apply tag filter first
@@ -245,8 +280,8 @@ function App() {
     }
     
     // Apply search filter
-    if (searchQuery) {
-      filtered = matchSorter(filtered, searchQuery, {
+    if (debouncedSearchQuery) {
+      filtered = matchSorter(filtered, debouncedSearchQuery, {
         keys: ['name', 'tags', 'notes', 'path']
       });
     }
@@ -254,18 +289,23 @@ function App() {
     // Apply sorting
     filtered = sortProjects(filtered, sortOption);
     
-    setFilteredProjects(filtered);
+    return filtered;
+  }, [debouncedSearchQuery, projects, activeTags, sortOption]);
+
+  // Update filtered projects when memoized value changes
+  useEffect(() => {
+    setFilteredProjects(filteredAndSortedProjects);
     // Reset selection when filter or sort changes
     setSelectedProjectIndex(0);
-  }, [searchQuery, projects, activeTags, sortOption]);
+  }, [filteredAndSortedProjects]);
 
-  // Get all unique tags from projects
-  const getAllTags = useCallback(() => {
-    const allTags = new Set();
+  // Memoize all unique tags from projects
+  const allTags = useMemo(() => {
+    const tagSet = new Set();
     projects.forEach(project => {
-      project.tags.forEach(tag => allTags.add(tag));
+      project.tags.forEach(tag => tagSet.add(tag));
     });
-    return Array.from(allTags).sort();
+    return Array.from(tagSet).sort();
   }, [projects]);
 
   // Handle tag filtering
@@ -302,6 +342,7 @@ function App() {
 
   // Add a new project
   const handleAddProject = async () => {
+    setLoadingOperations(prev => ({ ...prev, add: true }));
     try {
       const selected = await open({
         directory: true,
@@ -313,21 +354,27 @@ function App() {
       }
     } catch (error) {
       showSnackbar(`Failed to add project: ${error}`, 'error');
+    } finally {
+      setLoadingOperations(prev => ({ ...prev, add: false }));
     }
   };
 
   // Add project by path
   const addProjectByPath = async (path) => {
+    setLoadingOperations(prev => ({ ...prev, add: true }));
     try {
       const newProject = await invoke('add_project', { path });
       await loadProjects();
       showSnackbar(`Added project: ${newProject.name}`, 'success');
     } catch (error) {
-      if (error.includes('already exists')) {
+      const errorMessage = String(error);
+      if (errorMessage.includes('already exists')) {
         showSnackbar('This project already exists', 'warning');
       } else {
-        showSnackbar(`Failed to add project: ${error}`, 'error');
+        showSnackbar(`Failed to add project: ${errorMessage}`, 'error');
       }
+    } finally {
+      setLoadingOperations(prev => ({ ...prev, add: false }));
     }
   };
 
@@ -360,17 +407,36 @@ function App() {
 
   // Update project
   const handleUpdateProject = async (projectId, updates) => {
+    // Store original values for rollback
+    const originalProject = projects.find(p => p.id === projectId);
+    if (!originalProject) return;
+    
+    setLoadingOperations(prev => ({ ...prev, update: projectId }));
+    
+    // Optimistic update - immediately update the UI
+    updateProjectInState(projectId, updates);
+    showSnackbar('Project updated', 'success');
+    
     try {
       await invoke('update_project', { id: projectId, updates });
-      await loadProjects();
-      showSnackbar('Project updated', 'success');
     } catch (error) {
+      // Revert to original values on error
+      updateProjectInState(projectId, {
+        name: originalProject.name,
+        tags: originalProject.tags,
+        notes: originalProject.notes,
+      });
       showSnackbar(`Failed to update project: ${error}`, 'error');
+      // Reload from backend to ensure consistency
+      await loadProjects();
+    } finally {
+      setLoadingOperations(prev => ({ ...prev, update: null }));
     }
   };
 
   // Launch project
   const handleLaunchProject = async (projectId, continueFlag) => {
+    setLoadingOperations(prev => ({ ...prev, launch: projectId }));
     try {
       const result = await invoke('launch_project', { 
         id: projectId, 
@@ -381,6 +447,8 @@ function App() {
       await loadProjects();
     } catch (error) {
       showSnackbar(`Failed to launch project: ${error}`, 'error');
+    } finally {
+      setLoadingOperations(prev => ({ ...prev, launch: null }));
     }
   };
 
@@ -389,28 +457,60 @@ function App() {
     setDeleteDialog({ open: true, projectId });
   };
 
-  const confirmDelete = async () => {
+  const confirmDelete = useCallback(async () => {
+    if (!deleteDialog.projectId) {
+      console.error('No project ID provided for deletion');
+      return;
+    }
+    
+    console.log('Deleting project with ID:', deleteDialog.projectId);
+    setLoadingOperations(prev => ({ ...prev, delete: deleteDialog.projectId }));
+    
     try {
       await invoke('delete_project', { id: deleteDialog.projectId });
       await loadProjects();
       showSnackbar('Project deleted', 'success');
     } catch (error) {
+      console.error('Delete project error:', error);
       showSnackbar(`Failed to delete project: ${error}`, 'error');
     } finally {
+      setLoadingOperations(prev => ({ ...prev, delete: null }));
       setDeleteDialog({ open: false, projectId: null });
     }
+  }, [deleteDialog.projectId, loadProjects, showSnackbar]);
+
+  // Helper function to update a project in the state
+  const updateProjectInState = (projectId, updates) => {
+    setProjects(prevProjects => 
+      prevProjects.map(project => 
+        project.id === projectId 
+          ? { ...project, ...updates }
+          : project
+      )
+    );
   };
 
   // Pin/unpin project
   const handlePinProject = async (projectId, pinned) => {
+    setLoadingOperations(prev => ({ ...prev, pin: projectId }));
+    
+    // Optimistic update - immediately update the UI
+    updateProjectInState(projectId, { pinned });
+    showSnackbar(pinned ? 'Project pinned' : 'Project unpinned', 'success');
+    
     try {
       await invoke('update_project', { 
         id: projectId, 
         updates: { pinned } 
       });
-      await loadProjects();
     } catch (error) {
+      // Revert on error
+      updateProjectInState(projectId, { pinned: !pinned });
       showSnackbar(`Failed to update project: ${error}`, 'error');
+      // Reload from backend to ensure consistency
+      await loadProjects();
+    } finally {
+      setLoadingOperations(prev => ({ ...prev, pin: null }));
     }
   };
 
@@ -514,14 +614,26 @@ function App() {
             </FormControl>
 
             {/* Refresh Button */}
-            <IconButton color="inherit" onClick={loadProjects}>
+            <IconButton color="inherit" onClick={loadProjects} aria-label="Refresh projects">
               <RefreshIcon />
             </IconButton>
 
             {/* Theme Toggle */}
             <IconButton
               color="inherit"
-              onClick={() => setDarkMode(!darkMode)}
+              onClick={async () => {
+                const newTheme = !darkMode;
+                setDarkMode(newTheme);
+                try {
+                  await invoke('set_setting', { 
+                    key: 'theme_preference', 
+                    value: newTheme ? 'dark' : 'light' 
+                  });
+                } catch (error) {
+                  logError(`Failed to save theme preference: ${error}`);
+                }
+              }}
+              aria-label={darkMode ? "Switch to light theme" : "Switch to dark theme"}
               sx={{ ml: 1 }}
             >
               {darkMode ? <LightModeIcon /> : <DarkModeIcon />}
@@ -539,7 +651,7 @@ function App() {
           }}
         >
           {/* Tag Filter Section */}
-          {!loading && getAllTags().length > 0 && (
+          {!loading && allTags.length > 0 && (
             <Box sx={{ mb: 3 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
                 <Typography variant="h6" sx={{ mr: 2 }}>
@@ -557,7 +669,7 @@ function App() {
                 )}
               </Box>
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                {getAllTags().map((tag) => (
+                {allTags.map((tag) => (
                   <Chip
                     key={tag}
                     label={tag}
@@ -591,13 +703,14 @@ function App() {
           ) : (
             <ProjectGrid
               projects={filteredProjects}
-              recentProjects={searchQuery ? [] : recentProjects}
+              recentProjects={searchQuery || activeTags.length > 0 ? [] : recentProjects}
               onUpdateProject={handleUpdateProject}
               onLaunchProject={handleLaunchProject}
               onDeleteProject={handleDeleteProject}
               onPinProject={handlePinProject}
               selectedProjectIndex={selectedProjectIndex}
               onTagClick={handleTagClick}
+              loadingOperations={loadingOperations}
             />
           )}
 
@@ -637,8 +750,13 @@ function App() {
             right: 32,
           }}
           onClick={handleAddProject}
+          disabled={loadingOperations.add}
         >
-          <AddIcon />
+          {loadingOperations.add ? (
+            <CircularProgress size={24} color="inherit" />
+          ) : (
+            <AddIcon />
+          )}
         </Fab>
 
         {/* Delete Confirmation Dialog */}
@@ -656,8 +774,16 @@ function App() {
             <Button onClick={() => setDeleteDialog({ open: false, projectId: null })}>
               Cancel
             </Button>
-            <Button onClick={confirmDelete} color="error" variant="contained">
-              Delete
+            <Button 
+              onClick={confirmDelete} 
+              color="error" 
+              variant="contained"
+              disabled={loadingOperations.delete === deleteDialog.projectId}
+              startIcon={loadingOperations.delete === deleteDialog.projectId ? (
+                <CircularProgress size={16} color="inherit" />
+              ) : null}
+            >
+              {loadingOperations.delete === deleteDialog.projectId ? 'Deleting...' : 'Delete'}
             </Button>
           </DialogActions>
         </Dialog>

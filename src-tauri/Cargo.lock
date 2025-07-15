@@ -642,6 +642,7 @@ dependencies = [
  "tauri-plugin-log",
  "tauri-plugin-opener",
  "tauri-plugin-shell",
+ "tempfile",
  "uuid",
  "windows 0.54.0",
 ]

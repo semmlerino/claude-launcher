@@ -19,6 +19,7 @@ const ProjectGrid = ({
   onPinProject,
   selectedProjectIndex,
   onTagClick,
+  loadingOperations,
 }) => {
   const theme = useTheme();
   const isSmallScreen = useMediaQuery(theme.breakpoints.down('md'));
@@ -68,6 +69,7 @@ const ProjectGrid = ({
           onPin={onPinProject}
           onTagClick={onTagClick}
           isSelected={isSelected}
+          loadingOperations={loadingOperations}
         />
       </Box>
     );

@@ -35,3 +35,6 @@ log = "0.4"
 [target.'cfg(windows)'.dependencies]
 windows = "0.54"
 
+[dev-dependencies]
+tempfile = "3"
+
