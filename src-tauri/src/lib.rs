@@ -520,13 +520,26 @@ async fn launch_project(
             wsl_cmd.push_str(" && exec bash");
         }
         
-        let cmd = shell.command("wsl")
-            .args(&["-e", "bash", "-c", &wsl_cmd]);
+        // Use cmd.exe to open a new terminal window
+        // The /c flag carries out the command and then terminates
+        // The start command opens a new window
+        let window_title = format!("Claude - {}", project.name);
+        let cmd = shell.command("cmd")
+            .args(&[
+                "/c",
+                "start",
+                &window_title,  // Window title
+                "wsl",
+                "-e",
+                "bash",
+                "-c",
+                &wsl_cmd
+            ]);
         
-        info!("Attempting to launch Claude Code via WSL: {}", wsl_cmd);
+        info!("Attempting to launch Claude Code via WSL in terminal window: {}", wsl_cmd);
         match cmd.spawn() {
             Ok(_child) => {
-                info!("Successfully launched Claude Code via WSL");
+                info!("Successfully launched Claude Code via WSL in terminal window");
                 Ok(serde_json::json!({
                     "message": format!("Launched Claude Code for {} (WSL)", project.name)
                 }))
