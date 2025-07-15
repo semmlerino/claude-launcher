@@ -4,6 +4,8 @@ use rusqlite::{params, Connection, Result as SqliteResult};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Mutex;
+use std::fs;
+use std::env;
 use tauri::{Manager, State};
 use tauri_plugin_shell::ShellExt;
 use uuid::Uuid;
@@ -75,6 +77,7 @@ impl AppDatabase {
             ("use_wsl", "true"),  // Enable WSL by default on Windows
             ("claude_executable_path", "/home/gabrielh/.nvm/versions/node/v24.1.0/bin/claude"),
             ("keep_terminal_open", "false"),
+            ("wsl_launch_method", "batch"),  // Options: batch, wt, powershell
         ];
         
         for (key, default_value) in default_settings {
@@ -502,68 +505,68 @@ async fn launch_project(
         let keep_terminal = db.get_setting("keep_terminal_open")?
             .unwrap_or_else(|| "false".to_string()) == "true";
         
-        // Build WSL command
-        // Escape single quotes in the path for shell safety
-        let escaped_path = project.path.replace("'", "'\\''");
+        // Create temporary batch file for reliable WSL launch
+        let temp_dir = env::temp_dir();
+        let batch_file = temp_dir.join(format!("claude_launcher_{}.bat", Uuid::new_v4()));
         
-        // Build command with debugging and error handling
-        let mut wsl_cmd = format!(
-            "echo 'Claude Launcher - WSL Mode' && \
-             echo 'Project: {}' && \
-             echo 'Path: {}' && \
-             echo 'Converting path...' && \
-             wslpath='$(wslpath '{}')' && \
-             echo \"WSL Path: $wslpath\" && \
-             cd \"$wslpath\" && \
-             echo 'Launching Claude...' && \
-             {} --dangerously-skip-permissions",
+        // Escape the path for Windows batch file
+        let windows_path = project.path.replace("\\", "\\\\");
+        
+        // Build batch file content
+        let batch_content = format!(
+            "@echo off\n\
+             title Claude - {}\n\
+             echo Claude Launcher - WSL Mode\n\
+             echo Project: {}\n\
+             echo Path: {}\n\
+             echo.\n\
+             wsl -e bash -c \"cd \\\"$(wslpath '{}')\\\" && {} --dangerously-skip-permissions{}{}\"\n\
+             {}",
             project.name,
-            escaped_path,
-            escaped_path,
-            claude_path
+            project.name,
+            windows_path,
+            windows_path,
+            claude_path,
+            if continue_flag { " --continue" } else { "" },
+            if keep_terminal { " && exec bash" } else { " || echo 'Failed to launch Claude. Exit code: '$?; read -p 'Press Enter to close...'" },
+            if !keep_terminal { "pause" } else { "" }
         );
         
-        if continue_flag {
-            wsl_cmd.push_str(" --continue");
-        }
-        
-        // Add error handling and terminal persistence
-        if keep_terminal {
-            wsl_cmd.push_str(" && echo 'Claude launched successfully!' && exec bash");
-        } else {
-            // Always show result and wait for user input
-            wsl_cmd.push_str(" && echo 'Claude launched successfully!' || echo 'Failed to launch Claude! Exit code: '$?");
-            wsl_cmd.push_str(" && read -p 'Press Enter to close this window...'");
-        }
-        
-        // Use cmd.exe to open a new terminal window
-        // The /c flag carries out the command and then terminates
-        // The start command opens a new window
-        let window_title = format!("Claude - {}", project.name);
-        let cmd = shell.command("cmd")
-            .args(&[
-                "/c",
-                "start",
-                &window_title,  // Window title
-                "",             // Empty quotes for program parameter (required for start syntax)
-                "wsl",
-                "-e",
-                "bash",
-                "-c",
-                &wsl_cmd
-            ]);
-        
-        info!("Attempting to launch Claude Code via WSL in terminal window: {}", wsl_cmd);
-        match cmd.spawn() {
-            Ok(_child) => {
-                info!("Successfully launched Claude Code via WSL in terminal window");
-                Ok(serde_json::json!({
-                    "message": format!("Launched Claude Code for {} (WSL)", project.name)
-                }))
+        // Write batch file
+        match fs::write(&batch_file, batch_content) {
+            Ok(_) => {
+                info!("Created batch file: {:?}", batch_file);
+                
+                // Execute the batch file
+                let cmd = shell.command("cmd")
+                    .args(&["/c", batch_file.to_str().unwrap()]);
+                
+                match cmd.spawn() {
+                    Ok(_child) => {
+                        info!("Successfully launched Claude Code via WSL batch file");
+                        
+                        // Clean up batch file after a delay
+                        let batch_file_clone = batch_file.clone();
+                        std::thread::spawn(move || {
+                            std::thread::sleep(std::time::Duration::from_secs(5));
+                            let _ = fs::remove_file(&batch_file_clone);
+                            info!("Cleaned up batch file: {:?}", batch_file_clone);
+                        });
+                        
+                        Ok(serde_json::json!({
+                            "message": format!("Launched Claude Code for {} (WSL)", project.name)
+                        }))
+                    }
+                    Err(e) => {
+                        warn!("Failed to execute batch file: {}", e);
+                        let _ = fs::remove_file(&batch_file);
+                        Err(format!("Failed to launch Claude Code via WSL: {}", e))
+                    }
+                }
             }
             Err(e) => {
-                warn!("Failed to launch via WSL: {}", e);
-                Err(format!("Failed to launch Claude Code via WSL: {}. Make sure WSL is installed and claude is available at: {}", e, claude_path))
+                warn!("Failed to create batch file: {}", e);
+                Err(format!("Failed to create launch script: {}", e))
             }
         }
     } else {
