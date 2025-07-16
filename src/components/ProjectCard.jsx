@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import {
   Card,
   CardContent,
@@ -90,6 +91,14 @@ const ProjectCard = React.memo(({ project, onUpdate, onLaunch, onDelete, onPin, 
 
   const handleColorChange = (color) => {
     onUpdate(project.id, { background_color: color });
+  };
+
+  const handleOpenFolder = async () => {
+    try {
+      await invoke('open_project_folder', { id: project.id });
+    } catch (error) {
+      console.error('Failed to open project folder:', error);
+    }
   };
 
   const handleKeyDown = (event) => {
@@ -357,6 +366,7 @@ const ProjectCard = React.memo(({ project, onUpdate, onLaunch, onDelete, onPin, 
         onClose={handleCloseContextMenu}
         onRename={handleRename}
         onChangeColor={() => setColorPickerOpen(true)}
+        onOpenFolder={handleOpenFolder}
         onDelete={() => onDelete(project.id)}
       />
 

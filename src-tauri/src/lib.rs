@@ -709,6 +709,32 @@ async fn launch_project(
 }
 
 #[tauri::command]
+async fn open_project_folder(
+    app_handle: tauri::AppHandle,
+    db: State<'_, AppDatabase>,
+    id: String,
+) -> Result<serde_json::Value, String> {
+    info!("Opening project folder for id: {}", id);
+    
+    // Get project
+    let project = db.get_project_by_id(&id)?;
+    
+    // Open the project folder in the system file manager
+    match app_handle.opener().open_path(&project.path, None::<&str>) {
+        Ok(_) => {
+            info!("Successfully opened project folder: {}", project.path);
+            Ok(serde_json::json!({
+                "message": format!("Opened folder for {}", project.name)
+            }))
+        }
+        Err(e) => {
+            warn!("Failed to open project folder: {}", e);
+            Err(format!("Failed to open project folder: {}", e))
+        }
+    }
+}
+
+#[tauri::command]
 async fn delete_project(db: State<'_, AppDatabase>, id: String) -> Result<serde_json::Value, String> {
     db.delete_project(&id)?;
     
@@ -876,6 +902,7 @@ pub fn run() {
             get_recent_projects,
             update_project,
             launch_project,
+            open_project_folder,
             delete_project,
             check_claude_installed,
             get_setting,
