@@ -356,7 +356,7 @@ describe('ProjectCard', () => {
       expect(mockHandlers.onLaunch).toHaveBeenCalledWith(1, true);
     });
 
-    test('resets continue flag after launch', () => {
+    test('maintains continue flag after launch', () => {
       renderWithTheme(<ProjectCard project={defaultProject} {...mockHandlers} />);
       
       const continueCheckbox = screen.getByRole('checkbox', { name: /continue/i });
@@ -366,7 +366,7 @@ describe('ProjectCard', () => {
       const launchButton = screen.getByRole('button', { name: /launch/i });
       fireEvent.click(launchButton);
       
-      expect(continueCheckbox).not.toBeChecked();
+      expect(continueCheckbox).toBeChecked();
     });
 
     test('shows loading state during launch', () => {

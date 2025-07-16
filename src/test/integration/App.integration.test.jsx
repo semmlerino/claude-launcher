@@ -233,12 +233,12 @@ describe('App Integration Tests', () => {
         expect(screen.getByText('Project 1')).toBeInTheDocument();
       });
 
-      // Find and click delete button on first project
-      const deleteButtons = screen.getAllByRole('button', { name: /delete/i });
-      // Find the delete button in the first project card
-      const firstProjectDeleteBtn = deleteButtons.find(btn => btn.textContent.includes('DeleteIcon'));
+      // Find and click delete button on Project 1 specifically (use first instance)
+      const project1Titles = screen.getAllByText('Project 1');
+      const project1Card = project1Titles[0].closest('.project-card');
+      const deleteButton = within(project1Card).getByRole('button', { name: /delete project/i });
       await act(async () => {
-        await user.click(firstProjectDeleteBtn);
+        await user.click(deleteButton);
       });
 
       // Confirm deletion in dialog
@@ -250,8 +250,12 @@ describe('App Integration Tests', () => {
       // Wait for project to be removed
       await waitFor(() => {
         const project1Elements = screen.queryAllByText('Project 1');
-        const project2Elements = screen.getAllByText('Project 2');
         expect(project1Elements.length).toBe(0);
+      });
+
+      // Verify Project 2 is still there
+      await waitFor(() => {
+        const project2Elements = screen.getAllByText('Project 2');
         expect(project2Elements.length).toBeGreaterThan(0);
       });
     });
@@ -291,10 +295,11 @@ describe('App Integration Tests', () => {
       });
 
       // Pin the first project by clicking the star button
-      const starButtons = screen.getAllByRole('button');
-      const firstStarBtn = starButtons.find(btn => btn.textContent.includes('StarBorderIcon'));
+      const project1Titles = screen.getAllByText('Project 1');
+      const project1Card = project1Titles[0].closest('.project-card');
+      const starButton = within(project1Card).getByRole('button', { name: /pin project/i });
       await act(async () => {
-        await user.click(firstStarBtn);
+        await user.click(starButton);
       });
 
       // Wait for update

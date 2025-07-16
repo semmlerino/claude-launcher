@@ -14,7 +14,7 @@ describe('ProjectGrid', () => {
     onLaunchProject: vi.fn(),
     onDeleteProject: vi.fn(),
     onPinProject: vi.fn(),
-    selectedProjectIndex: null,
+    // selectedProjectIndex removed - keyboard navigation not needed
     onTagClick: vi.fn(),
     loadingOperations: {},
   };
@@ -134,49 +134,7 @@ describe('ProjectGrid', () => {
     });
   });
 
-  describe('Keyboard Navigation', () => {
-    it('highlights selected project', () => {
-      const projects = createMockProjects(3);
-      const { container } = renderProjectGrid({ 
-        projects,
-        selectedProjectIndex: 1 
-      });
-
-      const projectCards = container.querySelectorAll('.project-card');
-      expect(projectCards).toHaveLength(3);
-
-      // Check that the second project (index 1) has the selected styles
-      const selectedCard = projectCards[1];
-      expect(selectedCard.querySelector('[data-selected="true"]')).toBeTruthy();
-    });
-
-    it('scrolls selected project into view', async () => {
-      const scrollIntoViewMock = vi.fn();
-      Element.prototype.scrollIntoView = scrollIntoViewMock;
-
-      const projects = createMockProjects(10);
-      const { rerender } = renderProjectGrid({ 
-        projects,
-        selectedProjectIndex: null 
-      });
-
-      // Update selected index
-      rerender(
-        <ProjectGrid 
-          {...defaultProps} 
-          projects={projects} 
-          selectedProjectIndex={5} 
-        />
-      );
-
-      await waitFor(() => {
-        expect(scrollIntoViewMock).toHaveBeenCalledWith({
-          behavior: 'smooth',
-          block: 'nearest'
-        });
-      });
-    });
-  });
+  // Keyboard Navigation functionality removed per user request
 
   describe('Responsive Layout', () => {
     it('uses single column layout on small screens', () => {
@@ -261,7 +219,7 @@ describe('ProjectGrid', () => {
       expect(screen.getByText('Project 2')).toBeInTheDocument();
     });
 
-    it('correctly calculates global index for projects across sections', () => {
+    it('correctly renders projects across sections', () => {
       const recentProjects = [
         createMockProject({ id: 1, name: 'Recent 1' }),
         createMockProject({ id: 2, name: 'Recent 2' }),
@@ -276,15 +234,16 @@ describe('ProjectGrid', () => {
       const { container } = renderProjectGrid({
         projects: [...pinnedProjects, ...unpinnedProjects],
         recentProjects,
-        selectedProjectIndex: 3, // Should select the first unpinned project
       });
 
       const projectCards = container.querySelectorAll('.project-card');
       expect(projectCards).toHaveLength(4);
 
-      // The 4th card (index 3) should be selected
-      const selectedCard = projectCards[3];
-      expect(selectedCard.querySelector('[data-selected="true"]')).toBeTruthy();
+      // Check that all projects are rendered correctly
+      expect(screen.getByText('Recent 1')).toBeInTheDocument();
+      expect(screen.getByText('Recent 2')).toBeInTheDocument();
+      expect(screen.getByText('Pinned 1')).toBeInTheDocument();
+      expect(screen.getByText('Unpinned 1')).toBeInTheDocument();
     });
   });
 
@@ -317,7 +276,7 @@ describe('ProjectGrid', () => {
   });
 
   describe('Section Ordering', () => {
-    it('renders sections in correct order: Recent -> Pinned -> Others', () => {
+    it('renders sections in correct order: Pinned -> Recent -> Others', () => {
       const recentProjects = [createMockProject({ id: 1, name: 'Recent' })];
       const pinnedProjects = [createMockProject({ id: 2, name: 'Pinned', pinned: true })];
       const unpinnedProjects = [createMockProject({ id: 3, name: 'Unpinned', pinned: false })];
@@ -328,8 +287,8 @@ describe('ProjectGrid', () => {
       });
 
       const headings = screen.getAllByRole('heading', { level: 5 });
-      expect(headings[0]).toHaveTextContent('Recent Projects');
-      expect(headings[1]).toHaveTextContent('Pinned Projects');
+      expect(headings[0]).toHaveTextContent('Pinned Projects');
+      expect(headings[1]).toHaveTextContent('Recent Projects');
       expect(headings[2]).toHaveTextContent('Other Projects');
     });
   });

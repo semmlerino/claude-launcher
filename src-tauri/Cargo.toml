@@ -31,6 +31,8 @@ chrono = { version = "0.4", features = ["serde"] }
 rusqlite = { version = "0.32", features = ["bundled", "serde_json"] }
 dirs = "5.0"
 log = "0.4"
+parking_lot = "0.12"
+lru = "0.12"
 
 [target.'cfg(windows)'.dependencies]
 windows = "0.54"

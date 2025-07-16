@@ -19,6 +19,7 @@
         "minHeight": 400,
         "center": true,
         "resizable": true,
+        "decorations": false,
         "url": "index.html"
       }
     ],

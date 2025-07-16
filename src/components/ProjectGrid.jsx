@@ -17,7 +17,6 @@ const ProjectGrid = ({
   onLaunchProject,
   onDeleteProject,
   onPinProject,
-  selectedProjectIndex,
   onTagClick,
   loadingOperations,
 }) => {
@@ -25,26 +24,13 @@ const ProjectGrid = ({
   const isSmallScreen = useMediaQuery(theme.breakpoints.down('md'));
   const gridRef = useRef(null);
 
-  // Scroll selected project into view
-  useEffect(() => {
-    if (typeof selectedProjectIndex === 'number' && selectedProjectIndex >= 0) {
-      const cards = gridRef.current?.querySelectorAll('.project-card');
-      if (cards && cards[selectedProjectIndex]) {
-        cards[selectedProjectIndex].scrollIntoView({ 
-          behavior: 'smooth', 
-          block: 'nearest' 
-        });
-      }
-    }
-  }, [selectedProjectIndex]);
+  // Scroll functionality removed - keyboard navigation not needed
 
   // Separate pinned and unpinned projects
   const pinnedProjects = projects.filter(p => p.pinned);
   const unpinnedProjects = projects.filter(p => !p.pinned);
 
   const renderProjectCard = (project, globalIndex) => {
-    const isSelected = globalIndex === selectedProjectIndex;
-    
     return (
       <Box
         key={project.id}
@@ -53,8 +39,8 @@ const ProjectGrid = ({
         sx={{
           outline: 'none',
           '& > .MuiCard-root': {
-            boxShadow: isSelected ? theme.shadows[8] : theme.shadows[1],
-            borderColor: isSelected ? theme.palette.primary.main : 'transparent',
+            boxShadow: theme.shadows[1],
+            borderColor: 'transparent',
             borderWidth: 2,
             borderStyle: 'solid',
             transition: 'all 0.2s ease-in-out',
@@ -68,7 +54,7 @@ const ProjectGrid = ({
           onDelete={onDeleteProject}
           onPin={onPinProject}
           onTagClick={onTagClick}
-          isSelected={isSelected}
+          isSelected={false}
           loadingOperations={loadingOperations}
         />
       </Box>

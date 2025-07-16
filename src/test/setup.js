@@ -46,9 +46,56 @@ vi.mock('@mui/material', () => ({
     ...options
   }),
   useTheme: () => ({ 
-    palette: { mode: 'light' }, 
+    palette: { 
+      mode: 'light',
+      primary: { main: '#1976d2' },
+      secondary: { main: '#dc004e' },
+      background: { default: '#f5f5f5', paper: '#fff' },
+      text: { primary: '#000', secondary: '#666' }
+    }, 
     spacing: (factor) => `${8 * factor}px`,
-    shape: { borderRadius: 4 }
+    shape: { borderRadius: 4 },
+    breakpoints: {
+      values: {
+        xs: 0,
+        sm: 600,
+        md: 960,
+        lg: 1280,
+        xl: 1920,
+      },
+      up: (key) => `(min-width:${
+        typeof key === 'number' ? key : { xs: 0, sm: 600, md: 960, lg: 1280, xl: 1920 }[key]
+      }px)`,
+      down: (key) => `(max-width:${
+        typeof key === 'number' ? key - 0.05 : { xs: 599.95, sm: 959.95, md: 1279.95, lg: 1919.95, xl: 10000 }[key]
+      }px)`,
+      between: (start, end) => `(min-width:${
+        typeof start === 'number' ? start : { xs: 0, sm: 600, md: 960, lg: 1280, xl: 1920 }[start]
+      }px) and (max-width:${
+        typeof end === 'number' ? end - 0.05 : { xs: 599.95, sm: 959.95, md: 1279.95, lg: 1919.95, xl: 10000 }[end]
+      }px)`,
+      only: (key) => {
+        const keys = ['xs', 'sm', 'md', 'lg', 'xl'];
+        const index = keys.indexOf(key);
+        if (index === keys.length - 1) {
+          return `(min-width:${{ xs: 0, sm: 600, md: 960, lg: 1280, xl: 1920 }[key]}px)`;
+        }
+        return `(min-width:${{ xs: 0, sm: 600, md: 960, lg: 1280, xl: 1920 }[key]}px) and (max-width:${
+          { xs: 599.95, sm: 959.95, md: 1279.95, lg: 1919.95, xl: 10000 }[keys[index + 1]]
+        }px)`;
+      }
+    },
+    shadows: [
+      'none',
+      '0px 2px 1px -1px rgba(0,0,0,0.2),0px 1px 1px 0px rgba(0,0,0,0.14),0px 1px 3px 0px rgba(0,0,0,0.12)',
+      '0px 3px 1px -2px rgba(0,0,0,0.2),0px 2px 2px 0px rgba(0,0,0,0.14),0px 1px 5px 0px rgba(0,0,0,0.12)',
+      '0px 3px 3px -2px rgba(0,0,0,0.2),0px 3px 4px 0px rgba(0,0,0,0.14),0px 1px 8px 0px rgba(0,0,0,0.12)',
+      '0px 2px 4px -1px rgba(0,0,0,0.2),0px 4px 5px 0px rgba(0,0,0,0.14),0px 1px 10px 0px rgba(0,0,0,0.12)',
+      '0px 3px 5px -1px rgba(0,0,0,0.2),0px 5px 8px 0px rgba(0,0,0,0.14),0px 1px 14px 0px rgba(0,0,0,0.12)',
+      '0px 3px 5px -1px rgba(0,0,0,0.2),0px 6px 10px 0px rgba(0,0,0,0.14),0px 1px 18px 0px rgba(0,0,0,0.12)',
+      '0px 4px 5px -2px rgba(0,0,0,0.2),0px 7px 10px 1px rgba(0,0,0,0.14),0px 2px 16px 1px rgba(0,0,0,0.12)',
+      '0px 5px 5px -3px rgba(0,0,0,0.2),0px 8px 10px 1px rgba(0,0,0,0.14),0px 3px 14px 2px rgba(0,0,0,0.12)'
+    ]
   }),
   
   useMediaQuery: () => false,

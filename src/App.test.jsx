@@ -34,6 +34,9 @@ describe('App Component', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     clearMocks();
+    
+    // Don't use fake timers by default - let tests opt in
+    // vi.useFakeTimers();
 
     // Set up test data
     mockProjects = [
@@ -211,6 +214,7 @@ describe('App Component', () => {
   describe('Search Functionality', () => {
     it('should filter projects based on search query with debouncing', async () => {
       const user = userEvent.setup();
+      
       renderWithTheme(<App />);
 
       // Wait for projects to load
@@ -230,12 +234,15 @@ describe('App Component', () => {
       expect(screen.getByText('Test Project 2')).toBeInTheDocument();
       expect(screen.getByText('Test Project 3')).toBeInTheDocument();
 
-      // Wait for debounce (300ms) and filtering
+      
+      // Wait for filtering
       await waitFor(() => {
         expect(screen.getByText('Test Project 2')).toBeInTheDocument();
         expect(screen.queryByText('Test Project 1')).not.toBeInTheDocument();
         expect(screen.queryByText('Test Project 3')).not.toBeInTheDocument();
-      }, { timeout: 2000 });
+      });
+      
+      vi.useRealTimers();
     });
 
     it('should search across multiple fields', async () => {
@@ -259,11 +266,14 @@ describe('App Component', () => {
         await user.type(searchInput, 'unique-tag');
       });
 
-      // Wait for debounce and filtering
+      
+      // Wait for filtering
       await waitFor(() => {
         expect(screen.getByText('Alpha')).toBeInTheDocument();
         expect(screen.queryByText('Beta')).not.toBeInTheDocument();
-      }, { timeout: 2000 });
+      });
+      
+      vi.useRealTimers();
     });
   });
 
@@ -616,7 +626,9 @@ describe('App Component', () => {
 
       // Click add button
       const addButton = screen.getByLabelText('add');
-      await user.click(addButton);
+      await act(async () => {
+        await user.click(addButton);
+      });
 
       await waitFor(() => {
         expect(screen.getByText('This project already exists')).toBeInTheDocument();
@@ -624,83 +636,7 @@ describe('App Component', () => {
     });
   });
 
-  describe('Keyboard Navigation', () => {
-    it('should launch selected project with Enter key', async () => {
-      const user = userEvent.setup();
-      let launchedId = null;
-
-      mockIPC((cmd, args) => {
-        if (cmd === 'launch_project') {
-          launchedId = args.id;
-          return { message: 'Launched' };
-        }
-        // Use defaults
-        switch (cmd) {
-          case 'init_database':
-            return null;
-          case 'get_projects':
-            return mockProjects;
-          case 'get_recent_projects':
-            return [];
-          case 'get_setting':
-            return null;
-          case 'check_claude_installed':
-            return { installed: true };
-          default:
-            return null;
-        }
-      });
-
-      renderWithTheme(<App />);
-
-      await waitFor(() => {
-        expect(screen.getByText('Test Project 1')).toBeInTheDocument();
-      });
-
-      // Navigate to second project and launch
-      await user.keyboard('{ArrowDown}');
-      await user.keyboard('{Enter}');
-
-      expect(launchedId).toBe(2);
-    });
-
-    it('should launch with continue flag on Shift+Enter', async () => {
-      const user = userEvent.setup();
-      let continueFlag = null;
-
-      mockIPC((cmd, args) => {
-        if (cmd === 'launch_project') {
-          continueFlag = args.continueFlag;
-          return { message: 'Launched' };
-        }
-        // Use defaults
-        switch (cmd) {
-          case 'init_database':
-            return null;
-          case 'get_projects':
-            return mockProjects;
-          case 'get_recent_projects':
-            return [];
-          case 'get_setting':
-            return null;
-          case 'check_claude_installed':
-            return { installed: true };
-          default:
-            return null;
-        }
-      });
-
-      renderWithTheme(<App />);
-
-      await waitFor(() => {
-        expect(screen.getByText('Test Project 1')).toBeInTheDocument();
-      });
-
-      await user.keyboard('{Shift>}{Enter}{/Shift}');
-
-      expect(continueFlag).toBe(true);
-    });
-  });
+  // Keyboard Navigation functionality removed per user request
 
   describe('Drag and Drop Areas', () => {
     it('should show drop overlay on drag over', async () => {

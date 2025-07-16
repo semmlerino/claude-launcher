@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Card,
   CardContent,
@@ -28,12 +28,12 @@ import {
 import ContextMenu from './ContextMenu';
 import ColorPicker from './ColorPicker';
 
-const ProjectCard = ({ project, onUpdate, onLaunch, onDelete, onPin, onTagClick, isSelected, loadingOperations = {} }) => {
+const ProjectCard = React.memo(({ project, onUpdate, onLaunch, onDelete, onPin, onTagClick, isSelected, loadingOperations = {} }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editedName, setEditedName] = useState(project.name);
   const [editedTags, setEditedTags] = useState(project.tags.join(', '));
   const [editedNotes, setEditedNotes] = useState(project.notes);
-  const [continueFlag, setContinueFlag] = useState(false);
+  const [continueFlag, setContinueFlag] = useState(project.continue_flag || false);
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(project.name);
   const [contextMenu, setContextMenu] = useState(null);
@@ -57,7 +57,6 @@ const ProjectCard = ({ project, onUpdate, onLaunch, onDelete, onPin, onTagClick,
 
   const handleLaunch = () => {
     onLaunch(project.id, continueFlag);
-    setContinueFlag(false); // Reset after launch
   };
 
   const handleContextMenu = (event) => {
@@ -112,11 +111,12 @@ const ProjectCard = ({ project, onUpdate, onLaunch, onDelete, onPin, onTagClick,
     }
   }, [isRenaming, project.id]);
 
-  const truncateNotes = (notes, maxLength = 150) => {
-    if (!notes) return '';
-    if (notes.length <= maxLength) return notes;
-    return notes.substring(0, maxLength) + '...';
-  };
+  // Memoize truncated notes to avoid recalculation on every render
+  const truncatedNotes = useMemo(() => {
+    if (!project.notes) return '';
+    if (project.notes.length <= 150) return project.notes;
+    return project.notes.substring(0, 150) + '...';
+  }, [project.notes]);
 
   return (
     <Card
@@ -253,7 +253,7 @@ const ProjectCard = ({ project, onUpdate, onLaunch, onDelete, onPin, onTagClick,
               {project.notes ? (
                 <Tooltip title={project.notes.length > 150 ? project.notes : ''} arrow>
                   <Typography variant="body2" color="text.primary">
-                    {truncateNotes(project.notes)}
+                    {truncatedNotes}
                   </Typography>
                 </Tooltip>
               ) : (
@@ -299,7 +299,11 @@ const ProjectCard = ({ project, onUpdate, onLaunch, onDelete, onPin, onTagClick,
                 control={
                   <Checkbox
                     checked={continueFlag}
-                    onChange={(e) => setContinueFlag(e.target.checked)}
+                    onChange={(e) => {
+                      const newValue = e.target.checked;
+                      setContinueFlag(newValue);
+                      onUpdate(project.id, { continue_flag: newValue });
+                    }}
                     size="small"
                   />
                 }
@@ -365,6 +369,6 @@ const ProjectCard = ({ project, onUpdate, onLaunch, onDelete, onPin, onTagClick,
       />
     </Card>
   );
-};
+});
 
 export default ProjectCard;

@@ -3,13 +3,15 @@ use log::{debug, info, warn};
 use rusqlite::{params, Connection, Result as SqliteResult};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::sync::Mutex;
 use std::fs;
 use std::env;
 use tauri::{Manager, State};
 use tauri_plugin_shell::ShellExt;
 use tauri_plugin_opener::OpenerExt;
 use uuid::Uuid;
+use parking_lot::Mutex;
+use lru::LruCache;
+use std::num::NonZeroUsize;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Project {
@@ -21,6 +23,7 @@ struct Project {
     pinned: bool,
     last_used: Option<String>,
     background_color: Option<String>,
+    continue_flag: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -30,11 +33,19 @@ struct ProjectUpdate {
     notes: Option<String>,
     pinned: Option<bool>,
     background_color: Option<String>,
+    continue_flag: Option<bool>,
 }
 
+// Thread-safe wrapper for SQLite connection
 struct AppDatabase {
     conn: Mutex<Connection>,
+    settings_cache: Mutex<LruCache<String, String>>,
+    projects_cache: Mutex<Option<Vec<Project>>>,
 }
+
+// Make AppDatabase safe to share between threads
+unsafe impl Send for AppDatabase {}
+unsafe impl Sync for AppDatabase {}
 
 impl AppDatabase {
     fn new() -> Result<Self, Box<dyn std::error::Error>> {
@@ -59,7 +70,8 @@ impl AppDatabase {
                 notes TEXT,
                 pinned BOOLEAN DEFAULT 0,
                 last_used TEXT,
-                background_color TEXT
+                background_color TEXT,
+                continue_flag BOOLEAN DEFAULT 0
             )",
             [],
         )?;
@@ -144,9 +156,31 @@ impl AppDatabase {
                 Err(e) => warn!("Could not add background_color column: {}", e),
             }
         }
+
+        // Add continue_flag column if it doesn't exist (for existing databases)
+        let has_continue_flag: bool = conn
+            .query_row(
+                "SELECT COUNT(*) > 0 FROM pragma_table_info('projects') WHERE name = 'continue_flag'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(false);
+        
+        if !has_continue_flag {
+            info!("Adding continue_flag column to projects table");
+            match conn.execute(
+                "ALTER TABLE projects ADD COLUMN continue_flag BOOLEAN DEFAULT 0",
+                [],
+            ) {
+                Ok(_) => info!("Successfully added continue_flag column"),
+                Err(e) => warn!("Could not add continue_flag column: {}", e),
+            }
+        }
         
         Ok(AppDatabase {
             conn: Mutex::new(conn),
+            settings_cache: Mutex::new(LruCache::new(NonZeroUsize::new(100).unwrap())),
+            projects_cache: Mutex::new(None),
         })
     }
     
@@ -173,7 +207,7 @@ impl AppDatabase {
     
     fn add_project(&self, path: String) -> Result<Project, String> {
         info!("Adding new project at path: {}", path);
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         
         let id = Uuid::new_v4().to_string();
         let name = std::path::Path::new(&path)
@@ -184,8 +218,8 @@ impl AppDatabase {
         
         // Try to insert the project
         let result = conn.execute(
-            "INSERT INTO projects (id, path, name, tags, notes, pinned, last_used, background_color) 
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            "INSERT INTO projects (id, path, name, tags, notes, pinned, last_used, background_color, continue_flag) 
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![
                 &id,
                 &path,
@@ -194,13 +228,15 @@ impl AppDatabase {
                 "",
                 false,
                 Option::<String>::None,
-                Option::<String>::None
+                Option::<String>::None,
+                false
             ],
         );
         
         match result {
             Ok(_) => {
-                // Successfully inserted
+                // Successfully inserted - invalidate cache
+                self.invalidate_projects_cache();
                 Ok(Project {
                     id: id.clone(),
                     path: path.clone(),
@@ -210,6 +246,7 @@ impl AppDatabase {
                     pinned: false,
                     last_used: None,
                     background_color: None,
+                    continue_flag: false,
                 })
             }
             Err(rusqlite::Error::SqliteFailure(error, _)) 
@@ -217,7 +254,7 @@ impl AppDatabase {
                 // Project already exists, fetch and return it
                 info!("Project already exists at path: {}, returning existing project", path);
                 conn.query_row(
-                    "SELECT id, path, name, tags, notes, pinned, last_used, background_color 
+                    "SELECT id, path, name, tags, notes, pinned, last_used, background_color, continue_flag
                      FROM projects WHERE path = ?1",
                     params![&path],
                     |row| {
@@ -230,6 +267,7 @@ impl AppDatabase {
                             pinned: row.get(5)?,
                             last_used: row.get(6)?,
                             background_color: row.get(7)?,
+                            continue_flag: row.get(8)?,
                         })
                     },
                 )
@@ -243,11 +281,20 @@ impl AppDatabase {
     }
     
     fn get_all_projects(&self) -> Result<Vec<Project>, String> {
-        let conn = self.conn.lock().unwrap();
+        // Check cache first
+        {
+            let cache = self.projects_cache.lock();
+            if let Some(ref projects) = *cache {
+                return Ok(projects.clone());
+            }
+        }
+        
+        // Cache miss, query database
+        let conn = self.conn.lock();
         
         let mut stmt = conn
             .prepare(
-                "SELECT id, path, name, tags, notes, pinned, last_used, background_color 
+                "SELECT id, path, name, tags, notes, pinned, last_used, background_color, continue_flag
                  FROM projects 
                  ORDER BY pinned DESC, last_used DESC NULLS LAST",
             )
@@ -264,21 +311,33 @@ impl AppDatabase {
                     pinned: row.get(5)?,
                     last_used: row.get(6)?,
                     background_color: row.get(7)?,
+                    continue_flag: row.get(8)?,
                 })
             })
             .map_err(|e| e.to_string())?
             .collect::<SqliteResult<Vec<_>>>()
             .map_err(|e| e.to_string())?;
         
+        // Cache the results
+        {
+            let mut cache = self.projects_cache.lock();
+            *cache = Some(projects.clone());
+        }
+        
         Ok(projects)
     }
     
+    fn invalidate_projects_cache(&self) {
+        let mut cache = self.projects_cache.lock();
+        *cache = None;
+    }
+    
     fn get_recent_projects(&self, limit: usize) -> Result<Vec<Project>, String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         
         let mut stmt = conn
             .prepare(
-                "SELECT id, path, name, tags, notes, pinned, last_used, background_color 
+                "SELECT id, path, name, tags, notes, pinned, last_used, background_color, continue_flag
                  FROM projects 
                  WHERE last_used IS NOT NULL
                  ORDER BY last_used DESC
@@ -297,6 +356,7 @@ impl AppDatabase {
                     pinned: row.get(5)?,
                     last_used: row.get(6)?,
                     background_color: row.get(7)?,
+                    continue_flag: row.get(8)?,
                 })
             })
             .map_err(|e| e.to_string())?
@@ -309,7 +369,7 @@ impl AppDatabase {
     fn update_project(&self, id: String, updates: ProjectUpdate) -> Result<Project, String> {
         // Execute update in a scoped block to release the lock
         {
-            let conn = self.conn.lock().unwrap();
+            let conn = self.conn.lock();
             
             // Build dynamic update query
             let mut sql_parts = vec![];
@@ -340,6 +400,11 @@ impl AppDatabase {
                 params.push(Box::new(background_color.clone()));
             }
             
+            if let Some(continue_flag) = &updates.continue_flag {
+                sql_parts.push("continue_flag = ?");
+                params.push(Box::new(*continue_flag));
+            }
+            
             if sql_parts.is_empty() {
                 return Err("No updates provided".to_string());
             }
@@ -357,15 +422,18 @@ impl AppDatabase {
                 .map_err(|e| e.to_string())?;
         } // Lock is released here
         
+        // Invalidate cache after update
+        self.invalidate_projects_cache();
+        
         // Fetch and return updated project - now can acquire lock again
         self.get_project_by_id(&id)
     }
     
     fn get_project_by_id(&self, id: &str) -> Result<Project, String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         
         conn.query_row(
-            "SELECT id, path, name, tags, notes, pinned, last_used, background_color 
+            "SELECT id, path, name, tags, notes, pinned, last_used, background_color, continue_flag
              FROM projects WHERE id = ?1",
             params![id],
             |row| {
@@ -378,6 +446,7 @@ impl AppDatabase {
                     pinned: row.get(5)?,
                     last_used: row.get(6)?,
                     background_color: row.get(7)?,
+                    continue_flag: row.get(8)?,
                 })
             },
         )
@@ -385,7 +454,7 @@ impl AppDatabase {
     }
     
     fn update_last_used(&self, id: &str) -> Result<(), String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         let now = Utc::now().to_rfc3339();
         
         conn.execute(
@@ -398,16 +467,27 @@ impl AppDatabase {
     }
     
     fn delete_project(&self, id: &str) -> Result<(), String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         
         conn.execute("DELETE FROM projects WHERE id = ?1", params![id])
             .map_err(|e| e.to_string())?;
+        
+        // Invalidate cache after deletion
+        self.invalidate_projects_cache();
         
         Ok(())
     }
     
     fn get_setting(&self, key: &str) -> Result<Option<String>, String> {
-        let conn = self.conn.lock().unwrap();
+        // Check cache first
+        {
+            let cache = self.settings_cache.lock();
+            if let Some(value) = cache.peek(key) {
+                return Ok(Some(value.clone()));
+            }
+        }
+        
+        let conn = self.conn.lock();
         
         let result: Result<String, rusqlite::Error> = conn.query_row(
             "SELECT value FROM settings WHERE key = ?1",
@@ -416,20 +496,33 @@ impl AppDatabase {
         );
         
         match result {
-            Ok(value) => Ok(Some(value)),
+            Ok(value) => {
+                // Cache the result
+                {
+                    let mut cache = self.settings_cache.lock();
+                    cache.put(key.to_string(), value.clone());
+                }
+                Ok(Some(value))
+            },
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
             Err(e) => Err(e.to_string()),
         }
     }
     
     fn set_setting(&self, key: &str, value: &str) -> Result<(), String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         
         conn.execute(
             "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?1, ?2, ?3)",
             params![key, value, Utc::now().to_rfc3339()],
         )
         .map_err(|e| e.to_string())?;
+        
+        // Update cache
+        {
+            let mut cache = self.settings_cache.lock();
+            cache.put(key.to_string(), value.to_string());
+        }
         
         Ok(())
     }
@@ -819,7 +912,8 @@ mod tests {
                 pinned BOOLEAN NOT NULL DEFAULT 0,
                 last_used TEXT,
                 background_color TEXT,
-                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                continue_flag BOOLEAN NOT NULL DEFAULT 0
             )",
             [],
         )?;
@@ -845,6 +939,8 @@ mod tests {
         
         Ok(AppDatabase {
             conn: Mutex::new(conn),
+            settings_cache: Mutex::new(LruCache::new(NonZeroUsize::new(100).unwrap())),
+            projects_cache: Mutex::new(None),
         })
     }
     
@@ -980,7 +1076,7 @@ mod tests {
         let project3 = db.add_project("/test/project3".to_string()).unwrap();
         
         // Update last_used times
-        let conn = db.conn.lock().unwrap();
+        let conn = db.conn.lock();
         conn.execute(
             "UPDATE projects SET last_used = ? WHERE id = ?",
             params!["2024-01-03T00:00:00Z", project3.id],

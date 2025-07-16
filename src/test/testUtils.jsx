@@ -10,6 +10,15 @@ export function renderWithTheme(ui, options = {}) {
     palette: {
       mode: 'light',
     },
+    breakpoints: {
+      values: {
+        xs: 0,
+        sm: 600,
+        md: 960,
+        lg: 1280,
+        xl: 1920,
+      },
+    },
   });
   
   const { theme = defaultTheme, ...renderOptions } = options;

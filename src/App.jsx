@@ -94,7 +94,7 @@ function App() {
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' });
   const [deleteDialog, setDeleteDialog] = useState({ open: false, projectId: null });
   const [dragOver, setDragOver] = useState(false);
-  const [selectedProjectIndex, setSelectedProjectIndex] = useState(0);
+  // selectedProjectIndex removed - keyboard navigation not needed
   const [sortOption, setSortOption] = useState('recent');
   const [loadingOperations, setLoadingOperations] = useState({
     add: false,
@@ -130,8 +130,13 @@ function App() {
     [darkMode]
   );
 
+  // Show snackbar message - define early since other functions use it
+  const showSnackbar = useCallback((message, severity = 'info') => {
+    setSnackbar({ open: true, message, severity });
+  }, []);
+
   // Load sort preference
-  const loadSortPreference = async () => {
+  const loadSortPreference = useCallback(async () => {
     try {
       const savedSort = await invoke('get_setting', { key: 'sort_preference' });
       if (savedSort && (savedSort === 'name' || savedSort === 'recent')) {
@@ -141,10 +146,10 @@ function App() {
       // Use default if loading fails
       info('Using default sort preference');
     }
-  };
+  }, []);
 
   // Load theme preference
-  const loadThemePreference = async () => {
+  const loadThemePreference = useCallback(async () => {
     try {
       const savedTheme = await invoke('get_setting', { key: 'theme_preference' });
       if (savedTheme === 'light' || savedTheme === 'dark') {
@@ -154,7 +159,55 @@ function App() {
       // Use system preference if loading fails
       info('Using system theme preference');
     }
-  };
+  }, []);
+
+  // Load projects from backend
+  const loadProjects = useCallback(async () => {
+    try {
+      info('Loading projects...');
+      const [allProjects, recent] = await Promise.all([
+        invoke('get_projects'),
+        invoke('get_recent_projects', { limit: 5 })
+      ]);
+      setProjects(allProjects);
+      setRecentProjects(recent);
+      info(`Loaded ${allProjects.length} projects`);
+    } catch (error) {
+      logError(`Failed to load projects: ${error}`);
+      showSnackbar(`Failed to load projects: ${error}`, 'error');
+    }
+  }, [showSnackbar]);
+
+  // Check if Claude Code is installed
+  const checkClaudeInstalled = useCallback(async () => {
+    try {
+      const result = await invoke('check_claude_installed');
+      if (!result.installed) {
+        showSnackbar('Claude Code is not installed or not in PATH', 'warning');
+      }
+    } catch (error) {
+      logError(`Failed to check Claude installation: ${error}`);
+    }
+  }, [showSnackbar]);
+
+  // Add project by path - defined before file drop listener that uses it
+  const addProjectByPath = useCallback(async (path) => {
+    setLoadingOperations(prev => ({ ...prev, add: true }));
+    try {
+      const newProject = await invoke('add_project', { path });
+      await loadProjects();
+      showSnackbar(`Added project: ${newProject.name}`, 'success');
+    } catch (error) {
+      const errorMessage = String(error);
+      if (errorMessage.includes('already exists')) {
+        showSnackbar('This project already exists', 'warning');
+      } else {
+        showSnackbar(`Failed to add project: ${errorMessage}`, 'error');
+      }
+    } finally {
+      setLoadingOperations(prev => ({ ...prev, add: false }));
+    }
+  }, [loadProjects, showSnackbar]);
 
   // Initialize the app
   useEffect(() => {
@@ -196,7 +249,7 @@ function App() {
     };
     
     init();
-  }, []);
+  }, [loadProjects, loadSortPreference, loadThemePreference, checkClaudeInstalled, showSnackbar]);
 
   // Set up file drop listener
   useEffect(() => {
@@ -228,36 +281,7 @@ function App() {
         unlisten();
       }
     };
-  }, []);
-
-  // Load projects from backend
-  const loadProjects = async () => {
-    try {
-      info('Loading projects...');
-      const [allProjects, recent] = await Promise.all([
-        invoke('get_projects'),
-        invoke('get_recent_projects', { limit: 5 })
-      ]);
-      setProjects(allProjects);
-      setRecentProjects(recent);
-      info(`Loaded ${allProjects.length} projects`);
-    } catch (error) {
-      logError(`Failed to load projects: ${error}`);
-      showSnackbar(`Failed to load projects: ${error}`, 'error');
-    }
-  };
-
-  // Check if Claude Code is installed
-  const checkClaudeInstalled = async () => {
-    try {
-      const result = await invoke('check_claude_installed');
-      if (!result.installed) {
-        showSnackbar('Claude Code is not installed or not in PATH', 'warning');
-      }
-    } catch (error) {
-      logError(`Failed to check Claude installation: ${error}`);
-    }
-  };
+  }, [addProjectByPath]);
 
   // Debounce search query
   useEffect(() => {
@@ -295,8 +319,7 @@ function App() {
   // Update filtered projects when memoized value changes
   useEffect(() => {
     setFilteredProjects(filteredAndSortedProjects);
-    // Reset selection when filter or sort changes
-    setSelectedProjectIndex(0);
+    // selectedProjectIndex reset removed - keyboard navigation not needed
   }, [filteredAndSortedProjects]);
 
   // Memoize all unique tags from projects
@@ -309,13 +332,13 @@ function App() {
   }, [projects]);
 
   // Handle tag filtering
-  const handleTagClick = (tag) => {
+  const handleTagClick = useCallback((tag) => {
     if (activeTags.includes(tag)) {
       setActiveTags(activeTags.filter(t => t !== tag));
     } else {
       setActiveTags([...activeTags, tag]);
     }
-  };
+  }, [activeTags]);
 
   // Clear all tag filters
   const clearTagFilters = () => {
@@ -335,13 +358,8 @@ function App() {
     }
   };
 
-  // Show snackbar message
-  const showSnackbar = (message, severity = 'info') => {
-    setSnackbar({ open: true, message, severity });
-  };
-
   // Add a new project
-  const handleAddProject = async () => {
+  const handleAddProject = useCallback(async () => {
     setLoadingOperations(prev => ({ ...prev, add: true }));
     try {
       const selected = await open({
@@ -357,26 +375,7 @@ function App() {
     } finally {
       setLoadingOperations(prev => ({ ...prev, add: false }));
     }
-  };
-
-  // Add project by path
-  const addProjectByPath = async (path) => {
-    setLoadingOperations(prev => ({ ...prev, add: true }));
-    try {
-      const newProject = await invoke('add_project', { path });
-      await loadProjects();
-      showSnackbar(`Added project: ${newProject.name}`, 'success');
-    } catch (error) {
-      const errorMessage = String(error);
-      if (errorMessage.includes('already exists')) {
-        showSnackbar('This project already exists', 'warning');
-      } else {
-        showSnackbar(`Failed to add project: ${errorMessage}`, 'error');
-      }
-    } finally {
-      setLoadingOperations(prev => ({ ...prev, add: false }));
-    }
-  };
+  }, [addProjectByPath, showSnackbar]);
 
   // Handle drag and drop
   const handleDragOver = (e) => {
@@ -405,8 +404,31 @@ function App() {
     // This handler just prevents the browser's default behavior
   };
 
+  // Helper function to update a project in the state
+  // Optimized to avoid unnecessary re-renders
+  const updateProjectInState = useCallback((projectId, updates) => {
+    setProjects(prevProjects => {
+      // Find the project index for more efficient updates
+      const projectIndex = prevProjects.findIndex(p => p.id === projectId);
+      if (projectIndex === -1) return prevProjects;
+      
+      // Only update if there are actual changes
+      const currentProject = prevProjects[projectIndex];
+      const hasChanges = Object.keys(updates).some(key => 
+        currentProject[key] !== updates[key]
+      );
+      
+      if (!hasChanges) return prevProjects;
+      
+      // Create new array with updated project
+      const newProjects = [...prevProjects];
+      newProjects[projectIndex] = { ...currentProject, ...updates };
+      return newProjects;
+    });
+  }, []);
+
   // Update project
-  const handleUpdateProject = async (projectId, updates) => {
+  const handleUpdateProject = useCallback(async (projectId, updates) => {
     // Store original values for rollback
     const originalProject = projects.find(p => p.id === projectId);
     if (!originalProject) return;
@@ -425,6 +447,8 @@ function App() {
         name: originalProject.name,
         tags: originalProject.tags,
         notes: originalProject.notes,
+        background_color: originalProject.background_color,
+        continue_flag: originalProject.continue_flag,
       });
       showSnackbar(`Failed to update project: ${error}`, 'error');
       // Reload from backend to ensure consistency
@@ -432,10 +456,10 @@ function App() {
     } finally {
       setLoadingOperations(prev => ({ ...prev, update: null }));
     }
-  };
+  }, [projects, updateProjectInState, showSnackbar, loadProjects]);
 
   // Launch project
-  const handleLaunchProject = async (projectId, continueFlag) => {
+  const handleLaunchProject = useCallback(async (projectId, continueFlag) => {
     setLoadingOperations(prev => ({ ...prev, launch: projectId }));
     try {
       const result = await invoke('launch_project', { 
@@ -450,7 +474,7 @@ function App() {
     } finally {
       setLoadingOperations(prev => ({ ...prev, launch: null }));
     }
-  };
+  }, [showSnackbar, loadProjects]);
 
   // Delete project
   const handleDeleteProject = async (projectId) => {
@@ -479,19 +503,9 @@ function App() {
     }
   }, [deleteDialog.projectId, loadProjects, showSnackbar]);
 
-  // Helper function to update a project in the state
-  const updateProjectInState = (projectId, updates) => {
-    setProjects(prevProjects => 
-      prevProjects.map(project => 
-        project.id === projectId 
-          ? { ...project, ...updates }
-          : project
-      )
-    );
-  };
 
   // Pin/unpin project
-  const handlePinProject = async (projectId, pinned) => {
+  const handlePinProject = useCallback(async (projectId, pinned) => {
     setLoadingOperations(prev => ({ ...prev, pin: projectId }));
     
     // Optimistic update - immediately update the UI
@@ -512,42 +526,9 @@ function App() {
     } finally {
       setLoadingOperations(prev => ({ ...prev, pin: null }));
     }
-  };
+  }, [updateProjectInState, showSnackbar, loadProjects]);
 
-  // Keyboard navigation
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (filteredProjects.length === 0) return;
-
-      switch (e.key) {
-        case 'ArrowDown':
-          e.preventDefault();
-          setSelectedProjectIndex(prev => 
-            prev < filteredProjects.length - 1 ? prev + 1 : 0
-          );
-          break;
-        case 'ArrowUp':
-          e.preventDefault();
-          setSelectedProjectIndex(prev => 
-            prev > 0 ? prev - 1 : filteredProjects.length - 1
-          );
-          break;
-        case 'Enter':
-          e.preventDefault();
-          if (filteredProjects[selectedProjectIndex]) {
-            const selectedProject = filteredProjects[selectedProjectIndex];
-            handleLaunchProject(selectedProject.id, e.shiftKey);
-          }
-          break;
-        case 'Escape':
-          setSelectedProjectIndex(0);
-          break;
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [filteredProjects, selectedProjectIndex, handleLaunchProject]);
+  // Keyboard navigation functionality removed per user request
 
   return (
     <ThemeProvider theme={theme}>
@@ -708,7 +689,6 @@ function App() {
               onLaunchProject={handleLaunchProject}
               onDeleteProject={handleDeleteProject}
               onPinProject={handlePinProject}
-              selectedProjectIndex={selectedProjectIndex}
               onTagClick={handleTagClick}
               loadingOperations={loadingOperations}
             />
