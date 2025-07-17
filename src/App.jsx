@@ -467,14 +467,15 @@ function App() {
         continueFlag 
       });
       showSnackbar(result.message || 'Project launched', 'success');
-      // Reload to update last_used
-      await loadProjects();
+      // Update last_used locally instead of reloading all projects
+      const now = new Date().toISOString();
+      updateProjectInState(projectId, { last_used: now });
     } catch (error) {
       showSnackbar(`Failed to launch project: ${error}`, 'error');
     } finally {
       setLoadingOperations(prev => ({ ...prev, launch: null }));
     }
-  }, [showSnackbar, loadProjects]);
+  }, [showSnackbar, updateProjectInState]);
 
   // Delete project
   const handleDeleteProject = async (projectId) => {

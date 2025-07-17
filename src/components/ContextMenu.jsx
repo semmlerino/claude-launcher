@@ -40,19 +40,21 @@ const ContextMenu = ({ anchorPosition, open, onClose, onRename, onChangeColor, o
         </ListItemIcon>
         <ListItemText>Change Color</ListItemText>
       </MenuItem>
-      {onOpenFolder && (
-        <MenuItem
-          onClick={() => {
+      <MenuItem
+        onClick={() => {
+          if (onOpenFolder) {
             onOpenFolder();
-            onClose();
-          }}
-        >
-          <ListItemIcon>
-            <FolderOpen fontSize="small" />
-          </ListItemIcon>
-          <ListItemText>Open Folder</ListItemText>
-        </MenuItem>
-      )}
+          } else {
+            console.error('onOpenFolder is not defined');
+          }
+          onClose();
+        }}
+      >
+        <ListItemIcon>
+          <FolderOpen fontSize="small" />
+        </ListItemIcon>
+        <ListItemText>Open Folder</ListItemText>
+      </MenuItem>
       <Divider />
       <MenuItem
         onClick={() => {
