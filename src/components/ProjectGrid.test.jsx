@@ -20,9 +20,7 @@ describe('ProjectGrid', () => {
   };
 
   const renderProjectGrid = (props = {}) => {
-    return renderWithTheme(
-      <ProjectGrid {...defaultProps} {...props} />
-    );
+    return renderWithTheme(<ProjectGrid {...defaultProps} {...props} />);
   };
 
   beforeEach(() => {
@@ -57,13 +55,13 @@ describe('ProjectGrid', () => {
         name: `Other Project ${i + 1}`,
       }));
 
-      renderProjectGrid({ 
+      renderProjectGrid({
         projects: [...recentProjects, ...otherProjects],
-        recentProjects 
+        recentProjects,
       });
 
       expect(screen.getByText('Recent Projects')).toBeInTheDocument();
-      
+
       // Check recent projects are shown in their section
       const recentSection = screen.getByText('Recent Projects').parentElement;
       recentProjects.forEach(project => {
@@ -90,8 +88,8 @@ describe('ProjectGrid', () => {
         createMockProject({ id: 4, name: 'Unpinned 2', pinned: false }),
       ];
 
-      renderProjectGrid({ 
-        projects: [...pinnedProjects, ...unpinnedProjects] 
+      renderProjectGrid({
+        projects: [...pinnedProjects, ...unpinnedProjects],
       });
 
       expect(screen.getByText('Pinned Projects')).toBeInTheDocument();
@@ -118,13 +116,13 @@ describe('ProjectGrid', () => {
       renderProjectGrid({ projects: [] });
 
       expect(screen.getByText('No projects yet')).toBeInTheDocument();
-      expect(screen.getByText('Add a project by dragging a folder here or clicking the Add button')).toBeInTheDocument();
+      expect(
+        screen.getByText('Add a project by dragging a folder here or clicking the Add button'),
+      ).toBeInTheDocument();
     });
 
     it('displays empty state for unpinned section when only pinned projects exist', () => {
-      const pinnedProjects = [
-        createMockProject({ id: 1, name: 'Pinned 1', pinned: true }),
-      ];
+      const pinnedProjects = [createMockProject({ id: 1, name: 'Pinned 1', pinned: true })];
 
       renderProjectGrid({ projects: pinnedProjects });
 
@@ -161,10 +159,9 @@ describe('ProjectGrid', () => {
       }));
 
       const projects = createMockProjects(3);
-      const { container } = renderWithTheme(
-        <ProjectGrid {...defaultProps} projects={projects} />,
-        { theme: smallScreenTheme }
-      );
+      const { container } = renderWithTheme(<ProjectGrid {...defaultProps} projects={projects} />, {
+        theme: smallScreenTheme,
+      });
 
       // Check Masonry component columns prop
       const masonryElements = container.querySelectorAll('[data-testid="mock-masonry"]');
@@ -224,12 +221,8 @@ describe('ProjectGrid', () => {
         createMockProject({ id: 1, name: 'Recent 1' }),
         createMockProject({ id: 2, name: 'Recent 2' }),
       ];
-      const pinnedProjects = [
-        createMockProject({ id: 3, name: 'Pinned 1', pinned: true }),
-      ];
-      const unpinnedProjects = [
-        createMockProject({ id: 4, name: 'Unpinned 1', pinned: false }),
-      ];
+      const pinnedProjects = [createMockProject({ id: 3, name: 'Pinned 1', pinned: true })];
+      const unpinnedProjects = [createMockProject({ id: 4, name: 'Unpinned 1', pinned: false })];
 
       const { container } = renderProjectGrid({
         projects: [...pinnedProjects, ...unpinnedProjects],
@@ -268,7 +261,7 @@ describe('ProjectGrid', () => {
 
       const masonryComponent = container.querySelector('[data-testid="mock-masonry"]');
       expect(masonryComponent).toBeInTheDocument();
-      
+
       // Masonry applies spacing through CSS
       const styles = window.getComputedStyle(masonryComponent);
       expect(styles.gap).toBeDefined();

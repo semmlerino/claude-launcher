@@ -2,7 +2,15 @@ import React from 'react';
 import { Menu, MenuItem, ListItemIcon, ListItemText, Divider } from '@mui/material';
 import { Edit, Palette, Delete, FolderOpen } from '@mui/icons-material';
 
-const ContextMenu = ({ anchorPosition, open, onClose, onRename, onChangeColor, onOpenFolder, onDelete }) => {
+const ContextMenu = ({
+  anchorPosition,
+  open,
+  onClose,
+  onRename,
+  onChangeColor,
+  onOpenFolder,
+  onDelete,
+}) => {
   return (
     <Menu
       open={open}

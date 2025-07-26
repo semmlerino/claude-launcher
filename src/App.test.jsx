@@ -23,9 +23,10 @@ vi.mock('@tauri-apps/api/event', () => ({
 }));
 
 vi.mock('@tauri-apps/api/webviewWindow', () => ({
-  getCurrentWebviewWindow: vi.fn(() => ({})),
+  getCurrentWebviewWindow: vi.fn(() => ({
+    close: vi.fn(),
+  })),
 }));
-
 
 describe('App Component', () => {
   let mockProjects;
@@ -34,7 +35,7 @@ describe('App Component', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     clearMocks();
-    
+
     // Don't use fake timers by default - let tests opt in
     // vi.useFakeTimers();
 
@@ -66,7 +67,7 @@ describe('App Component', () => {
           return null;
         case 'check_claude_installed':
           return { installed: true };
-        case 'add_project':
+        case 'add_project': {
           const newProject = createMockProject({
             id: mockProjects.length + 1,
             path: args.path,
@@ -74,15 +75,17 @@ describe('App Component', () => {
           });
           mockProjects.push(newProject);
           return newProject;
-        case 'update_project':
+        }
+        case 'update_project': {
           const projectIndex = mockProjects.findIndex(p => p.id === args.id);
           if (projectIndex !== -1) {
-            mockProjects[projectIndex] = { 
-              ...mockProjects[projectIndex], 
-              ...args.updates 
+            mockProjects[projectIndex] = {
+              ...mockProjects[projectIndex],
+              ...args.updates,
             };
           }
           return null;
+        }
         case 'delete_project':
           mockProjects = mockProjects.filter(p => p.id !== args.id);
           return null;
@@ -102,10 +105,10 @@ describe('App Component', () => {
   describe('Initialization Flow', () => {
     it('should initialize database, load projects, settings, and check Claude installation', async () => {
       let commandCalls = [];
-      
+
       mockIPC((cmd, args) => {
         commandCalls.push({ cmd, args });
-        
+
         switch (cmd) {
           case 'init_database':
             return null;
@@ -130,8 +133,12 @@ describe('App Component', () => {
         expect(commandCalls.some(c => c.cmd === 'init_database')).toBe(true);
         expect(commandCalls.some(c => c.cmd === 'get_projects')).toBe(true);
         expect(commandCalls.some(c => c.cmd === 'get_recent_projects')).toBe(true);
-        expect(commandCalls.some(c => c.cmd === 'get_setting' && c.args?.key === 'sort_preference')).toBe(true);
-        expect(commandCalls.some(c => c.cmd === 'get_setting' && c.args?.key === 'theme_preference')).toBe(true);
+        expect(
+          commandCalls.some(c => c.cmd === 'get_setting' && c.args?.key === 'sort_preference'),
+        ).toBe(true);
+        expect(
+          commandCalls.some(c => c.cmd === 'get_setting' && c.args?.key === 'theme_preference'),
+        ).toBe(true);
         expect(commandCalls.some(c => c.cmd === 'check_claude_installed')).toBe(true);
       });
 
@@ -145,9 +152,11 @@ describe('App Component', () => {
     it('should show loading spinner during initialization', async () => {
       // Set up a delayed response for get_projects to ensure we see loading state
       let resolveProjects;
-      const projectsPromise = new Promise(resolve => { resolveProjects = resolve; });
-      
-      mockIPC((cmd) => {
+      const projectsPromise = new Promise(resolve => {
+        resolveProjects = resolve;
+      });
+
+      mockIPC(cmd => {
         if (cmd === 'get_projects') {
           // Return a promise that we control
           return projectsPromise;
@@ -166,25 +175,28 @@ describe('App Component', () => {
             return null;
         }
       });
-      
+
       renderWithTheme(<App />);
-      
+
       // Check for loading state
       expect(screen.getByRole('progressbar')).toBeInTheDocument();
-      
+
       // Resolve the promise to complete loading
       act(() => {
         resolveProjects(mockProjects);
       });
-      
+
       // Wait for loading to finish
-      await waitFor(() => {
-        expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
-      }, { timeout: 5000 });
+      await waitFor(
+        () => {
+          expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+        },
+        { timeout: 5000 },
+      );
     });
 
     it('should show warning if Claude is not installed', async () => {
-      mockIPC((cmd) => {
+      mockIPC(cmd => {
         if (cmd === 'check_claude_installed') {
           return { installed: false };
         }
@@ -205,16 +217,21 @@ describe('App Component', () => {
 
       renderWithTheme(<App />);
 
-      await waitFor(() => {
-        expect(screen.getByText('Claude Code is not installed or not in PATH')).toBeInTheDocument();
-      }, { timeout: 5000 });
+      await waitFor(
+        () => {
+          expect(
+            screen.getByText('Claude Code is not installed or not in PATH'),
+          ).toBeInTheDocument();
+        },
+        { timeout: 5000 },
+      );
     });
   });
 
   describe('Search Functionality', () => {
     it('should filter projects based on search query with debouncing', async () => {
       const user = userEvent.setup();
-      
+
       renderWithTheme(<App />);
 
       // Wait for projects to load
@@ -223,7 +240,7 @@ describe('App Component', () => {
       });
 
       const searchInput = screen.getByPlaceholderText('Search projects...');
-      
+
       // Type search query
       await act(async () => {
         await user.type(searchInput, 'Project 2');
@@ -234,26 +251,25 @@ describe('App Component', () => {
       expect(screen.getByText('Test Project 2')).toBeInTheDocument();
       expect(screen.getByText('Test Project 3')).toBeInTheDocument();
 
-      
       // Wait for filtering
       await waitFor(() => {
         expect(screen.getByText('Test Project 2')).toBeInTheDocument();
         expect(screen.queryByText('Test Project 1')).not.toBeInTheDocument();
         expect(screen.queryByText('Test Project 3')).not.toBeInTheDocument();
       });
-      
+
       vi.useRealTimers();
     });
 
     it('should search across multiple fields', async () => {
       const user = userEvent.setup();
-      
+
       // Create project with unique tag
       mockProjects = [
         createMockProject({ id: 1, name: 'Alpha', tags: ['unique-tag'] }),
         createMockProject({ id: 2, name: 'Beta', tags: ['common'] }),
       ];
-      
+
       renderWithTheme(<App />);
 
       await waitFor(() => {
@@ -261,18 +277,17 @@ describe('App Component', () => {
       });
 
       const searchInput = screen.getByPlaceholderText('Search projects...');
-      
+
       await act(async () => {
         await user.type(searchInput, 'unique-tag');
       });
 
-      
       // Wait for filtering
       await waitFor(() => {
         expect(screen.getByText('Alpha')).toBeInTheDocument();
         expect(screen.queryByText('Beta')).not.toBeInTheDocument();
       });
-      
+
       vi.useRealTimers();
     });
   });
@@ -280,12 +295,16 @@ describe('App Component', () => {
   describe('Tag Filtering', () => {
     it('should filter projects by selected tags', async () => {
       const user = userEvent.setup();
-      
+
       // Set up projects with different tags
       mockProjects = [
         createMockProject({ id: 1, name: 'Frontend Project', tags: ['react', 'frontend'] }),
         createMockProject({ id: 2, name: 'Backend Project', tags: ['node', 'backend'] }),
-        createMockProject({ id: 3, name: 'Fullstack Project', tags: ['react', 'node', 'fullstack'] }),
+        createMockProject({
+          id: 3,
+          name: 'Fullstack Project',
+          tags: ['react', 'node', 'fullstack'],
+        }),
       ];
 
       renderWithTheme(<App />);
@@ -317,7 +336,7 @@ describe('App Component', () => {
 
     it('should support multiple tag filters with AND logic', async () => {
       const user = userEvent.setup();
-      
+
       mockProjects = [
         createMockProject({ id: 1, name: 'Project A', tags: ['react', 'frontend'] }),
         createMockProject({ id: 2, name: 'Project B', tags: ['react'] }),
@@ -338,12 +357,12 @@ describe('App Component', () => {
       await act(async () => {
         await user.click(reactTags[0]);
       });
-      
+
       // Wait for first tag to be applied
       await waitFor(() => {
         expect(screen.getByText(/with tags: react/)).toBeInTheDocument();
       });
-      
+
       await act(async () => {
         await user.click(frontendTags[0]);
       });
@@ -355,14 +374,14 @@ describe('App Component', () => {
         expect(screen.queryByText('Project B')).not.toBeInTheDocument();
         expect(screen.queryByText('Project C')).not.toBeInTheDocument();
       });
-      
+
       // Should show both tags in the filter status
       expect(screen.getByText(/with tags: react, frontend/)).toBeInTheDocument();
     });
 
     it('should clear tag filters', async () => {
       const user = userEvent.setup();
-      
+
       mockProjects = [
         createMockProject({ id: 1, name: 'Tagged', tags: ['special'] }),
         createMockProject({ id: 2, name: 'Untagged', tags: [] }),
@@ -380,7 +399,7 @@ describe('App Component', () => {
       await act(async () => {
         await user.click(specialTag);
       });
-      
+
       await waitFor(() => {
         expect(screen.queryByText('Untagged')).not.toBeInTheDocument();
       });
@@ -402,7 +421,7 @@ describe('App Component', () => {
   describe('Sort Functionality', () => {
     it('should sort projects by name (A-Z)', async () => {
       const user = userEvent.setup();
-      
+
       mockProjects = [
         createMockProject({ id: 1, name: 'Zebra', last_used: '2024-01-01T00:00:00Z' }),
         createMockProject({ id: 2, name: 'Alpha', last_used: '2024-01-03T00:00:00Z' }),
@@ -425,22 +444,26 @@ describe('App Component', () => {
       // Verify alphabetical order - get all h2 elements
       await waitFor(() => {
         const projectNames = screen.getAllByRole('heading').map(h => h.textContent);
-        
+
         // Find all instances of project names
-        const alphaIndices = projectNames.map((name, index) => name === 'Alpha' ? index : -1).filter(i => i >= 0);
-        const betaIndices = projectNames.map((name, index) => name === 'Beta' ? index : -1).filter(i => i >= 0);
-        const zebraIndices = projectNames.map((name, index) => name === 'Zebra' ? index : -1).filter(i => i >= 0);
-        
+        const alphaIndices = projectNames
+          .map((name, index) => (name === 'Alpha' ? index : -1))
+          .filter(i => i >= 0);
+        const betaIndices = projectNames
+          .map((name, index) => (name === 'Beta' ? index : -1))
+          .filter(i => i >= 0);
+        const zebraIndices = projectNames
+          .map((name, index) => (name === 'Zebra' ? index : -1))
+          .filter(i => i >= 0);
+
         // Check that at least one instance of each project follows alphabetical order
         // (this accounts for projects appearing in both recent and main sections)
-        const hasCorrectOrder = alphaIndices.some(alphaIdx => 
-          betaIndices.some(betaIdx => 
-            zebraIndices.some(zebraIdx => 
-              alphaIdx < betaIdx && betaIdx < zebraIdx
-            )
-          )
+        const hasCorrectOrder = alphaIndices.some(alphaIdx =>
+          betaIndices.some(betaIdx =>
+            zebraIndices.some(zebraIdx => alphaIdx < betaIdx && betaIdx < zebraIdx),
+          ),
         );
-        
+
         expect(hasCorrectOrder).toBe(true);
       });
     });
@@ -462,22 +485,26 @@ describe('App Component', () => {
       // Default sort should be recent - verify order
       await waitFor(() => {
         const projectNames = screen.getAllByRole('heading').map(h => h.textContent);
-        
+
         // Find all instances of project names
-        const newestIndices = projectNames.map((name, index) => name === 'Newest' ? index : -1).filter(i => i >= 0);
-        const middleIndices = projectNames.map((name, index) => name === 'Middle' ? index : -1).filter(i => i >= 0);
-        const oldIndices = projectNames.map((name, index) => name === 'Old' ? index : -1).filter(i => i >= 0);
-        
+        const newestIndices = projectNames
+          .map((name, index) => (name === 'Newest' ? index : -1))
+          .filter(i => i >= 0);
+        const middleIndices = projectNames
+          .map((name, index) => (name === 'Middle' ? index : -1))
+          .filter(i => i >= 0);
+        const oldIndices = projectNames
+          .map((name, index) => (name === 'Old' ? index : -1))
+          .filter(i => i >= 0);
+
         // Check that at least one instance of each project follows recent order
         // (this accounts for projects appearing in both recent and main sections)
-        const hasCorrectOrder = newestIndices.some(newestIdx => 
-          middleIndices.some(middleIdx => 
-            oldIndices.some(oldIdx => 
-              newestIdx < middleIdx && middleIdx < oldIdx
-            )
-          )
+        const hasCorrectOrder = newestIndices.some(newestIdx =>
+          middleIndices.some(middleIdx =>
+            oldIndices.some(oldIdx => newestIdx < middleIdx && middleIdx < oldIdx),
+          ),
         );
-        
+
         expect(hasCorrectOrder).toBe(true);
       });
     });
@@ -573,7 +600,7 @@ describe('App Component', () => {
 
   describe('Error Handling with Snackbar', () => {
     it('should show error when project loading fails', async () => {
-      mockIPC((cmd) => {
+      mockIPC(cmd => {
         if (cmd === 'get_projects') {
           throw new Error('Database error');
         }
@@ -595,14 +622,16 @@ describe('App Component', () => {
       renderWithTheme(<App />);
 
       await waitFor(() => {
-        expect(screen.getByText(/Failed to load projects: Error: Database error/)).toBeInTheDocument();
+        expect(
+          screen.getByText(/Failed to load projects: Error: Database error/),
+        ).toBeInTheDocument();
       });
     });
 
     it('should show warning for duplicate projects', async () => {
       const user = userEvent.setup();
       const { open } = await import('@tauri-apps/plugin-dialog');
-      
+
       renderWithTheme(<App />);
 
       await waitFor(() => {
@@ -649,10 +678,10 @@ describe('App Component', () => {
 
       // Find the main app container
       const appContainer = document.querySelector('body > div > div');
-      
+
       // Fire drag over event
       await act(async () => {
-        const dragOverEvent = new Event('dragover', { bubbles: true });
+        const dragOverEvent = new window.Event('dragover', { bubbles: true });
         dragOverEvent.preventDefault = vi.fn();
         appContainer.dispatchEvent(dragOverEvent);
       });
@@ -661,7 +690,7 @@ describe('App Component', () => {
 
       // Fire drag leave event
       await act(async () => {
-        const dragLeaveEvent = new Event('dragleave', { bubbles: true });
+        const dragLeaveEvent = new window.Event('dragleave', { bubbles: true });
         dragLeaveEvent.preventDefault = vi.fn();
         appContainer.dispatchEvent(dragLeaveEvent);
       });
@@ -674,7 +703,7 @@ describe('App Component', () => {
     it('should add project through file dialog', async () => {
       const user = userEvent.setup();
       const { open } = await import('@tauri-apps/plugin-dialog');
-      
+
       renderWithTheme(<App />);
 
       await waitFor(() => {
@@ -698,7 +727,7 @@ describe('App Component', () => {
     it('should show loading state while adding', async () => {
       const user = userEvent.setup();
       const { open } = await import('@tauri-apps/plugin-dialog');
-      
+
       renderWithTheme(<App />);
 
       await waitFor(() => {
@@ -706,8 +735,8 @@ describe('App Component', () => {
       });
 
       // Mock slow dialog
-      open.mockImplementation(() => 
-        new Promise(resolve => setTimeout(() => resolve('/path'), 100))
+      open.mockImplementation(
+        () => new Promise(resolve => setTimeout(() => resolve('/path'), 100)),
       );
 
       const addButton = screen.getByRole('button', { name: 'add' });
@@ -725,7 +754,7 @@ describe('App Component', () => {
   describe('Delete Dialog Flow', () => {
     it('should show confirmation dialog before deleting', async () => {
       const user = userEvent.setup();
-      
+
       renderWithTheme(<App />);
 
       await waitFor(() => {
@@ -734,7 +763,7 @@ describe('App Component', () => {
 
       // Find delete button for first project
       const deleteButtons = screen.getAllByRole('button', { name: 'Delete project' });
-      
+
       await act(async () => {
         await user.click(deleteButtons[0]);
       });
@@ -745,7 +774,7 @@ describe('App Component', () => {
 
     it('should delete project on confirmation', async () => {
       const user = userEvent.setup();
-      
+
       renderWithTheme(<App />);
 
       await waitFor(() => {
@@ -754,11 +783,11 @@ describe('App Component', () => {
 
       // Click delete on first project
       const deleteButtons = screen.getAllByRole('button', { name: 'Delete project' });
-      
+
       await act(async () => {
         await user.click(deleteButtons[0]);
       });
-      
+
       // Confirm deletion
       await act(async () => {
         await user.click(screen.getByRole('button', { name: 'Delete' }));
@@ -772,7 +801,7 @@ describe('App Component', () => {
 
     it('should cancel deletion', async () => {
       const user = userEvent.setup();
-      
+
       renderWithTheme(<App />);
 
       await waitFor(() => {
@@ -782,11 +811,11 @@ describe('App Component', () => {
 
       // Click delete then cancel
       const deleteButtons = screen.getAllByRole('button', { name: 'Delete project' });
-      
+
       await act(async () => {
         await user.click(deleteButtons[0]);
       });
-      
+
       await act(async () => {
         await user.click(screen.getByRole('button', { name: 'Cancel' }));
       });
@@ -795,6 +824,138 @@ describe('App Component', () => {
       const testProject1Elements = screen.getAllByText('Test Project 1');
       expect(testProject1Elements.length).toBeGreaterThan(0);
       expect(screen.queryByText('Delete Project?')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('Close Functionality', () => {
+    beforeEach(() => {
+      // Ensure proper initialization for close functionality tests
+      mockProjects = [
+        createMockProject({ id: 1, name: 'Test Project 1' }),
+      ];
+    });
+
+    it('should close window when X button is clicked', async () => {
+      const user = userEvent.setup();
+      const { getCurrentWebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+      const mockClose = vi.fn();
+      getCurrentWebviewWindow.mockReturnValue({ close: mockClose });
+
+      renderWithTheme(<App />);
+
+      // Wait for app to fully load
+      await waitFor(() => {
+        expect(screen.getByText('Claude Launcher')).toBeInTheDocument();
+      });
+
+      // Wait for projects to load
+      await waitFor(() => {
+        expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+      });
+
+      // Find and click the close button
+      const closeButton = screen.getByRole('button', { name: 'Close application' });
+      await act(async () => {
+        await user.click(closeButton);
+      });
+
+      expect(mockClose).toHaveBeenCalled();
+    });
+
+    it('should show global context menu on right click', async () => {
+      const user = userEvent.setup();
+
+      renderWithTheme(<App />);
+
+      // Wait for app to fully load
+      await waitFor(() => {
+        expect(screen.getByText('Claude Launcher')).toBeInTheDocument();
+      });
+
+      // Wait for projects to load
+      await waitFor(() => {
+        expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+      });
+
+      // Right-click on the main container
+      const appContainer = document.querySelector('body > div > div');
+      await act(async () => {
+        await user.pointer({
+          keys: '[MouseRight]',
+          target: appContainer,
+        });
+      });
+
+      // Check that context menu appears with Close option
+      await waitFor(() => {
+        expect(screen.getByText('Close')).toBeInTheDocument();
+      });
+    });
+
+    it('should close window when context menu Close is clicked', async () => {
+      const user = userEvent.setup();
+      const { getCurrentWebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+      const mockClose = vi.fn();
+      getCurrentWebviewWindow.mockReturnValue({ close: mockClose });
+
+      renderWithTheme(<App />);
+
+      // Wait for app to fully load
+      await waitFor(() => {
+        expect(screen.getByText('Claude Launcher')).toBeInTheDocument();
+      });
+
+      // Wait for projects to load
+      await waitFor(() => {
+        expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+      });
+
+      // Right-click to open context menu
+      const appContainer = document.querySelector('body > div > div');
+      await act(async () => {
+        await user.pointer({
+          keys: '[MouseRight]',
+          target: appContainer,
+        });
+      });
+
+      // Click Close in the context menu
+      const closeMenuItem = await screen.findByText('Close');
+      await act(async () => {
+        await user.click(closeMenuItem);
+      });
+
+      expect(mockClose).toHaveBeenCalled();
+    });
+
+    it('should handle close window errors gracefully', async () => {
+      const user = userEvent.setup();
+      const { getCurrentWebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+      const mockClose = vi.fn().mockRejectedValue(new Error('Failed to close'));
+      getCurrentWebviewWindow.mockReturnValue({ close: mockClose });
+
+      renderWithTheme(<App />);
+
+      // Wait for app to fully load
+      await waitFor(() => {
+        expect(screen.getByText('Claude Launcher')).toBeInTheDocument();
+      });
+
+      // Wait for projects to load
+      await waitFor(() => {
+        expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+      });
+
+      // Click the close button
+      const closeButton = screen.getByRole('button', { name: 'Close application' });
+      await act(async () => {
+        await user.click(closeButton);
+      });
+
+      // Should show error snackbar
+      await waitFor(() => {
+        expect(screen.getByText('Failed to close window')).toBeInTheDocument();
+      });
     });
   });
 });

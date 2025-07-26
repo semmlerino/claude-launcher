@@ -16,7 +16,7 @@ class ErrorBoundary extends React.Component {
     console.error('ErrorBoundary caught an error:', error, errorInfo);
     this.setState({
       error,
-      errorInfo
+      errorInfo,
     });
   }
 
@@ -34,7 +34,7 @@ class ErrorBoundary extends React.Component {
             justifyContent: 'center',
             minHeight: '100vh',
             backgroundColor: 'background.default',
-            p: 3
+            p: 3,
           }}
         >
           <Paper
@@ -42,27 +42,28 @@ class ErrorBoundary extends React.Component {
             sx={{
               p: 4,
               maxWidth: 600,
-              textAlign: 'center'
+              textAlign: 'center',
             }}
           >
-            <ErrorIcon 
-              sx={{ 
-                fontSize: 80, 
+            <ErrorIcon
+              sx={{
+                fontSize: 80,
                 color: 'error.main',
-                mb: 2
-              }} 
+                mb: 2,
+              }}
             />
             <Typography variant="h4" gutterBottom>
               Something went wrong
             </Typography>
             <Typography variant="body1" color="text.secondary" paragraph>
-              An unexpected error occurred. You can try refreshing the page or restarting the application.
+              An unexpected error occurred. You can try refreshing the page or restarting the
+              application.
             </Typography>
             {process.env.NODE_ENV === 'development' && this.state.error && (
-              <Box 
-                sx={{ 
-                  mt: 2, 
-                  p: 2, 
+              <Box
+                sx={{
+                  mt: 2,
+                  p: 2,
                   backgroundColor: 'grey.100',
                   borderRadius: 1,
                   textAlign: 'left',
@@ -71,7 +72,7 @@ class ErrorBoundary extends React.Component {
                   whiteSpace: 'pre-wrap',
                   wordBreak: 'break-word',
                   maxHeight: 200,
-                  overflow: 'auto'
+                  overflow: 'auto',
                 }}
               >
                 {this.state.error.toString()}
@@ -79,17 +80,10 @@ class ErrorBoundary extends React.Component {
               </Box>
             )}
             <Box sx={{ mt: 3, display: 'flex', gap: 2, justifyContent: 'center' }}>
-              <Button
-                variant="contained"
-                startIcon={<RefreshIcon />}
-                onClick={this.handleReset}
-              >
+              <Button variant="contained" startIcon={<RefreshIcon />} onClick={this.handleReset}>
                 Try Again
               </Button>
-              <Button
-                variant="outlined"
-                onClick={() => window.location.reload()}
-              >
+              <Button variant="outlined" onClick={() => window.location.reload()}>
                 Reload Page
               </Button>
             </Box>

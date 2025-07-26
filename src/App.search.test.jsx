@@ -32,7 +32,7 @@ describe('App Search Tests - Debug', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     clearMocks();
-    
+
     mockProjects = [
       createMockProject({ id: 1, name: 'Test Project 1' }),
       createMockProject({ id: 2, name: 'Test Project 2' }),
@@ -82,18 +82,18 @@ describe('App Search Tests - Debug', () => {
     });
 
     const searchInput = screen.getByPlaceholderText('Search projects...');
-    
+
     await act(async () => {
       await user.type(searchInput, 'Project 2');
     });
-    
+
     expect(searchInput.value).toBe('Project 2');
   });
 
   it('should filter projects with fake timers - step by step', async () => {
     vi.useFakeTimers();
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    
+
     const { container } = renderWithTheme(<App />);
 
     // Wait for initial render with real timers temporarily
@@ -104,7 +104,7 @@ describe('App Search Tests - Debug', () => {
     vi.useFakeTimers();
 
     const searchInput = screen.getByPlaceholderText('Search projects...');
-    
+
     // Type search query
     await act(async () => {
       await user.type(searchInput, 'Project 2');
@@ -122,7 +122,7 @@ describe('App Search Tests - Debug', () => {
 
     // Switch back to real timers for waitFor
     vi.useRealTimers();
-    
+
     // Wait for filtering to apply
     await waitFor(() => {
       expect(screen.getByText('Test Project 2')).toBeInTheDocument();
@@ -133,7 +133,7 @@ describe('App Search Tests - Debug', () => {
 
   it('should filter projects without fake timers - wait for debounce', async () => {
     const user = userEvent.setup();
-    
+
     renderWithTheme(<App />);
 
     await waitFor(() => {
@@ -141,17 +141,20 @@ describe('App Search Tests - Debug', () => {
     });
 
     const searchInput = screen.getByPlaceholderText('Search projects...');
-    
+
     // Type search query
     await act(async () => {
       await user.type(searchInput, 'Project 2');
     });
 
     // Just wait for the debounce naturally (300ms)
-    await waitFor(() => {
-      expect(screen.getByText('Test Project 2')).toBeInTheDocument();
-      expect(screen.queryByText('Test Project 1')).not.toBeInTheDocument();
-      expect(screen.queryByText('Test Project 3')).not.toBeInTheDocument();
-    }, { timeout: 1000 });
+    await waitFor(
+      () => {
+        expect(screen.getByText('Test Project 2')).toBeInTheDocument();
+        expect(screen.queryByText('Test Project 1')).not.toBeInTheDocument();
+        expect(screen.queryByText('Test Project 3')).not.toBeInTheDocument();
+      },
+      { timeout: 1000 },
+    );
   });
 });

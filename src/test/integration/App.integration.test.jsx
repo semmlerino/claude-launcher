@@ -99,7 +99,7 @@ describe('App Integration Tests', () => {
       const project2Elements = screen.getAllByText('Project 2');
       expect(project1Elements.length).toBeGreaterThan(0);
       expect(project2Elements.length).toBeGreaterThan(0);
-      
+
       // Check tags are displayed - use getAllByText since tags appear multiple times
       const reactTags = screen.getAllByText('react');
       const pythonTags = screen.getAllByText('python');
@@ -108,7 +108,7 @@ describe('App Integration Tests', () => {
     });
 
     it('should handle database initialization failure', async () => {
-      mockIPC((cmd) => {
+      mockIPC(cmd => {
         if (cmd === 'init_database') {
           throw new Error('Database initialization failed');
         }
@@ -268,12 +268,13 @@ describe('App Integration Tests', () => {
         switch (cmd) {
           case 'init_database':
             return { status: 'success' };
-          case 'update_project':
+          case 'update_project': {
             const projectIndex = projectsData.findIndex(p => p.id === args.id);
             if (projectIndex !== -1) {
               projectsData[projectIndex] = { ...projectsData[projectIndex], ...args.updates };
             }
             return { status: 'success' };
+          }
           case 'get_projects':
             return projectsData;
           case 'get_recent_projects':
@@ -311,7 +312,7 @@ describe('App Integration Tests', () => {
 
   describe('Search and Filtering', () => {
     beforeEach(() => {
-      mockIPC((cmd) => {
+      mockIPC(cmd => {
         switch (cmd) {
           case 'init_database':
             return { status: 'success' };
@@ -458,7 +459,7 @@ describe('App Integration Tests', () => {
         const selects = screen.getAllByRole('combobox');
         expect(selects.length).toBeGreaterThan(0);
       });
-      
+
       // Find and change sort selector
       const sortSelector = screen.getByRole('combobox');
       await act(async () => {
@@ -520,7 +521,7 @@ describe('App Integration Tests', () => {
     });
 
     it('should show error when Claude is not installed', async () => {
-      mockIPC((cmd) => {
+      mockIPC(cmd => {
         switch (cmd) {
           case 'init_database':
             return { status: 'success' };
@@ -541,7 +542,9 @@ describe('App Integration Tests', () => {
 
       // Should show warning about Claude not being installed
       await waitFor(() => {
-        expect(screen.getByText(/Claude Code is not installed or not in PATH/i)).toBeInTheDocument();
+        expect(
+          screen.getByText(/Claude Code is not installed or not in PATH/i),
+        ).toBeInTheDocument();
       });
     });
   });

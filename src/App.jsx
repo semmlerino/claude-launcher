@@ -32,6 +32,9 @@ import {
   MenuItem,
   FormControl,
   InputLabel,
+  Menu,
+  ListItemIcon,
+  ListItemText,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -41,6 +44,7 @@ import {
   Refresh as RefreshIcon,
   Clear as ClearIcon,
   Sort as SortIcon,
+  Close as CloseIcon,
 } from '@mui/icons-material';
 import ProjectGrid from './components/ProjectGrid';
 import './App.css';
@@ -48,17 +52,19 @@ import './App.css';
 // Simple fuzzy search implementation
 const matchSorter = (items, searchText, options) => {
   if (!searchText) return items;
-  
+
   const searchLower = searchText.toLowerCase();
   const keys = options.keys || [];
-  
+
   return items.filter(item => {
     return keys.some(key => {
       const value = item[key];
       if (Array.isArray(value)) {
         return value.some(v => String(v).toLowerCase().includes(searchLower));
       }
-      return String(value || '').toLowerCase().includes(searchLower);
+      return String(value || '')
+        .toLowerCase()
+        .includes(searchLower);
     });
   });
 };
@@ -96,12 +102,13 @@ function App() {
   const [dragOver, setDragOver] = useState(false);
   // selectedProjectIndex removed - keyboard navigation not needed
   const [sortOption, setSortOption] = useState('recent');
+  const [globalContextMenu, setGlobalContextMenu] = useState(null);
   const [loadingOperations, setLoadingOperations] = useState({
     add: false,
     launch: null, // stores projectId when launching
     delete: null, // stores projectId when deleting
     update: null, // stores projectId when updating
-    pin: null,    // stores projectId when pinning/unpinning
+    pin: null, // stores projectId when pinning/unpinning
   });
   const [isInitialized, setIsInitialized] = useState(false);
   const initializingRef = useRef(false);
@@ -127,7 +134,7 @@ function App() {
           borderRadius: 12,
         },
       }),
-    [darkMode]
+    [darkMode],
   );
 
   // Show snackbar message - define early since other functions use it
@@ -167,7 +174,7 @@ function App() {
       info('Loading projects...');
       const [allProjects, recent] = await Promise.all([
         invoke('get_projects'),
-        invoke('get_recent_projects', { limit: 5 })
+        invoke('get_recent_projects', { limit: 5 }),
       ]);
       setProjects(allProjects);
       setRecentProjects(recent);
@@ -191,23 +198,26 @@ function App() {
   }, [showSnackbar]);
 
   // Add project by path - defined before file drop listener that uses it
-  const addProjectByPath = useCallback(async (path) => {
-    setLoadingOperations(prev => ({ ...prev, add: true }));
-    try {
-      const newProject = await invoke('add_project', { path });
-      await loadProjects();
-      showSnackbar(`Added project: ${newProject.name}`, 'success');
-    } catch (error) {
-      const errorMessage = String(error);
-      if (errorMessage.includes('already exists')) {
-        showSnackbar('This project already exists', 'warning');
-      } else {
-        showSnackbar(`Failed to add project: ${errorMessage}`, 'error');
+  const addProjectByPath = useCallback(
+    async path => {
+      setLoadingOperations(prev => ({ ...prev, add: true }));
+      try {
+        const newProject = await invoke('add_project', { path });
+        await loadProjects();
+        showSnackbar(`Added project: ${newProject.name}`, 'success');
+      } catch (error) {
+        const errorMessage = String(error);
+        if (errorMessage.includes('already exists')) {
+          showSnackbar('This project already exists', 'warning');
+        } else {
+          showSnackbar(`Failed to add project: ${errorMessage}`, 'error');
+        }
+      } finally {
+        setLoadingOperations(prev => ({ ...prev, add: false }));
       }
-    } finally {
-      setLoadingOperations(prev => ({ ...prev, add: false }));
-    }
-  }, [loadProjects, showSnackbar]);
+    },
+    [loadProjects, showSnackbar],
+  );
 
   // Initialize the app
   useEffect(() => {
@@ -217,65 +227,65 @@ function App() {
         info('Initialization already in progress or completed, skipping...');
         return;
       }
-      
+
       initializingRef.current = true;
-      
+
       try {
         setLoading(true);
         info('Starting application initialization...');
-        
+
         // Initialize database
         await invoke('init_database');
-        
+
         // Load all data in parallel
         await Promise.all([
           loadProjects(),
           loadSortPreference(),
           loadThemePreference(),
-          checkClaudeInstalled()
+          checkClaudeInstalled(),
         ]);
-        
+
         setIsInitialized(true);
         info('Application initialized successfully');
       } catch (error) {
         logError(`Failed to initialize: ${error}`);
         showSnackbar(`Failed to initialize: ${error}`, 'error');
-        
+
         // Reset initialization flag on error to allow retry
         initializingRef.current = false;
       } finally {
         setLoading(false);
       }
     };
-    
+
     init();
   }, [loadProjects, loadSortPreference, loadThemePreference, checkClaudeInstalled, showSnackbar]);
 
   // Set up file drop listener
   useEffect(() => {
     let unlisten;
-    
+
     const setupListener = async () => {
       console.log('Setting up Tauri drag-drop listener...');
       info('Setting up Tauri drag-drop listener...');
-      
-      unlisten = await listen('tauri://drag-drop', async (event) => {
+
+      unlisten = await listen('tauri://drag-drop', async event => {
         console.log('Tauri drag-drop event received!', event);
         info('Tauri drag-drop event received', event);
         const paths = event.payload.paths || [];
         console.log('Dropped paths:', paths);
-        
+
         for (const path of paths) {
           await addProjectByPath(path);
         }
       });
-      
+
       console.log('Tauri drag-drop listener set up successfully');
       info('Tauri drag-drop listener set up successfully');
     };
-    
+
     setupListener();
-    
+
     return () => {
       if (unlisten) {
         unlisten();
@@ -295,24 +305,22 @@ function App() {
   // Memoize filtered and sorted projects
   const filteredAndSortedProjects = useMemo(() => {
     let filtered = projects;
-    
+
     // Apply tag filter first
     if (activeTags.length > 0) {
-      filtered = filtered.filter(project => 
-        activeTags.every(tag => project.tags.includes(tag))
-      );
+      filtered = filtered.filter(project => activeTags.every(tag => project.tags.includes(tag)));
     }
-    
+
     // Apply search filter
     if (debouncedSearchQuery) {
       filtered = matchSorter(filtered, debouncedSearchQuery, {
-        keys: ['name', 'tags', 'notes', 'path']
+        keys: ['name', 'tags', 'notes', 'path'],
       });
     }
-    
+
     // Apply sorting
     filtered = sortProjects(filtered, sortOption);
-    
+
     return filtered;
   }, [debouncedSearchQuery, projects, activeTags, sortOption]);
 
@@ -332,13 +340,16 @@ function App() {
   }, [projects]);
 
   // Handle tag filtering
-  const handleTagClick = useCallback((tag) => {
-    if (activeTags.includes(tag)) {
-      setActiveTags(activeTags.filter(t => t !== tag));
-    } else {
-      setActiveTags([...activeTags, tag]);
-    }
-  }, [activeTags]);
+  const handleTagClick = useCallback(
+    tag => {
+      if (activeTags.includes(tag)) {
+        setActiveTags(activeTags.filter(t => t !== tag));
+      } else {
+        setActiveTags([...activeTags, tag]);
+      }
+    },
+    [activeTags],
+  );
 
   // Clear all tag filters
   const clearTagFilters = () => {
@@ -346,12 +357,12 @@ function App() {
   };
 
   // Handle sort option change
-  const handleSortChange = async (newSortOption) => {
+  const handleSortChange = async newSortOption => {
     setSortOption(newSortOption);
     try {
-      await invoke('set_setting', { 
-        key: 'sort_preference', 
-        value: newSortOption 
+      await invoke('set_setting', {
+        key: 'sort_preference',
+        value: newSortOption,
       });
     } catch (error) {
       logError(`Failed to save sort preference: ${error}`);
@@ -366,7 +377,7 @@ function App() {
         directory: true,
         multiple: false,
       });
-      
+
       if (selected) {
         await addProjectByPath(selected);
       }
@@ -378,7 +389,7 @@ function App() {
   }, [addProjectByPath, showSnackbar]);
 
   // Handle drag and drop
-  const handleDragOver = (e) => {
+  const handleDragOver = e => {
     console.log('HTML dragOver event fired');
     info('HTML dragOver event fired');
     e.preventDefault();
@@ -386,7 +397,7 @@ function App() {
     setDragOver(true);
   };
 
-  const handleDragLeave = (e) => {
+  const handleDragLeave = e => {
     console.log('HTML dragLeave event fired');
     info('HTML dragLeave event fired');
     e.preventDefault();
@@ -394,7 +405,7 @@ function App() {
     setDragOver(false);
   };
 
-  const handleDrop = async (e) => {
+  const handleDrop = async e => {
     console.log('HTML drop event fired', e);
     info('HTML drop event fired');
     e.preventDefault();
@@ -411,15 +422,13 @@ function App() {
       // Find the project index for more efficient updates
       const projectIndex = prevProjects.findIndex(p => p.id === projectId);
       if (projectIndex === -1) return prevProjects;
-      
+
       // Only update if there are actual changes
       const currentProject = prevProjects[projectIndex];
-      const hasChanges = Object.keys(updates).some(key => 
-        currentProject[key] !== updates[key]
-      );
-      
+      const hasChanges = Object.keys(updates).some(key => currentProject[key] !== updates[key]);
+
       if (!hasChanges) return prevProjects;
-      
+
       // Create new array with updated project
       const newProjects = [...prevProjects];
       newProjects[projectIndex] = { ...currentProject, ...updates };
@@ -428,57 +437,63 @@ function App() {
   }, []);
 
   // Update project
-  const handleUpdateProject = useCallback(async (projectId, updates) => {
-    // Store original values for rollback
-    const originalProject = projects.find(p => p.id === projectId);
-    if (!originalProject) return;
-    
-    setLoadingOperations(prev => ({ ...prev, update: projectId }));
-    
-    // Optimistic update - immediately update the UI
-    updateProjectInState(projectId, updates);
-    showSnackbar('Project updated', 'success');
-    
-    try {
-      await invoke('update_project', { id: projectId, updates });
-    } catch (error) {
-      // Revert to original values on error
-      updateProjectInState(projectId, {
-        name: originalProject.name,
-        tags: originalProject.tags,
-        notes: originalProject.notes,
-        background_color: originalProject.background_color,
-        continue_flag: originalProject.continue_flag,
-      });
-      showSnackbar(`Failed to update project: ${error}`, 'error');
-      // Reload from backend to ensure consistency
-      await loadProjects();
-    } finally {
-      setLoadingOperations(prev => ({ ...prev, update: null }));
-    }
-  }, [projects, updateProjectInState, showSnackbar, loadProjects]);
+  const handleUpdateProject = useCallback(
+    async (projectId, updates) => {
+      // Store original values for rollback
+      const originalProject = projects.find(p => p.id === projectId);
+      if (!originalProject) return;
+
+      setLoadingOperations(prev => ({ ...prev, update: projectId }));
+
+      // Optimistic update - immediately update the UI
+      updateProjectInState(projectId, updates);
+      showSnackbar('Project updated', 'success');
+
+      try {
+        await invoke('update_project', { id: projectId, updates });
+      } catch (error) {
+        // Revert to original values on error
+        updateProjectInState(projectId, {
+          name: originalProject.name,
+          tags: originalProject.tags,
+          notes: originalProject.notes,
+          background_color: originalProject.background_color,
+          continue_flag: originalProject.continue_flag,
+        });
+        showSnackbar(`Failed to update project: ${error}`, 'error');
+        // Reload from backend to ensure consistency
+        await loadProjects();
+      } finally {
+        setLoadingOperations(prev => ({ ...prev, update: null }));
+      }
+    },
+    [projects, updateProjectInState, showSnackbar, loadProjects],
+  );
 
   // Launch project
-  const handleLaunchProject = useCallback(async (projectId, continueFlag) => {
-    setLoadingOperations(prev => ({ ...prev, launch: projectId }));
-    try {
-      const result = await invoke('launch_project', { 
-        id: projectId, 
-        continueFlag 
-      });
-      showSnackbar(result.message || 'Project launched', 'success');
-      // Update last_used locally instead of reloading all projects
-      const now = new Date().toISOString();
-      updateProjectInState(projectId, { last_used: now });
-    } catch (error) {
-      showSnackbar(`Failed to launch project: ${error}`, 'error');
-    } finally {
-      setLoadingOperations(prev => ({ ...prev, launch: null }));
-    }
-  }, [showSnackbar, updateProjectInState]);
+  const handleLaunchProject = useCallback(
+    async (projectId, continueFlag) => {
+      setLoadingOperations(prev => ({ ...prev, launch: projectId }));
+      try {
+        const result = await invoke('launch_project', {
+          id: projectId,
+          continueFlag,
+        });
+        showSnackbar(result.message || 'Project launched', 'success');
+        // Update last_used locally instead of reloading all projects
+        const now = new Date().toISOString();
+        updateProjectInState(projectId, { last_used: now });
+      } catch (error) {
+        showSnackbar(`Failed to launch project: ${error}`, 'error');
+      } finally {
+        setLoadingOperations(prev => ({ ...prev, launch: null }));
+      }
+    },
+    [showSnackbar, updateProjectInState],
+  );
 
   // Delete project
-  const handleDeleteProject = async (projectId) => {
+  const handleDeleteProject = async projectId => {
     setDeleteDialog({ open: true, projectId });
   };
 
@@ -487,10 +502,10 @@ function App() {
       console.error('No project ID provided for deletion');
       return;
     }
-    
+
     console.log('Deleting project with ID:', deleteDialog.projectId);
     setLoadingOperations(prev => ({ ...prev, delete: deleteDialog.projectId }));
-    
+
     try {
       await invoke('delete_project', { id: deleteDialog.projectId });
       await loadProjects();
@@ -504,32 +519,58 @@ function App() {
     }
   }, [deleteDialog.projectId, loadProjects, showSnackbar]);
 
-
   // Pin/unpin project
-  const handlePinProject = useCallback(async (projectId, pinned) => {
-    setLoadingOperations(prev => ({ ...prev, pin: projectId }));
-    
-    // Optimistic update - immediately update the UI
-    updateProjectInState(projectId, { pinned });
-    showSnackbar(pinned ? 'Project pinned' : 'Project unpinned', 'success');
-    
-    try {
-      await invoke('update_project', { 
-        id: projectId, 
-        updates: { pinned } 
-      });
-    } catch (error) {
-      // Revert on error
-      updateProjectInState(projectId, { pinned: !pinned });
-      showSnackbar(`Failed to update project: ${error}`, 'error');
-      // Reload from backend to ensure consistency
-      await loadProjects();
-    } finally {
-      setLoadingOperations(prev => ({ ...prev, pin: null }));
-    }
-  }, [updateProjectInState, showSnackbar, loadProjects]);
+  const handlePinProject = useCallback(
+    async (projectId, pinned) => {
+      setLoadingOperations(prev => ({ ...prev, pin: projectId }));
+
+      // Optimistic update - immediately update the UI
+      updateProjectInState(projectId, { pinned });
+      showSnackbar(pinned ? 'Project pinned' : 'Project unpinned', 'success');
+
+      try {
+        await invoke('update_project', {
+          id: projectId,
+          updates: { pinned },
+        });
+      } catch (error) {
+        // Revert on error
+        updateProjectInState(projectId, { pinned: !pinned });
+        showSnackbar(`Failed to update project: ${error}`, 'error');
+        // Reload from backend to ensure consistency
+        await loadProjects();
+      } finally {
+        setLoadingOperations(prev => ({ ...prev, pin: null }));
+      }
+    },
+    [updateProjectInState, showSnackbar, loadProjects],
+  );
 
   // Keyboard navigation functionality removed per user request
+
+  // Close window function
+  const handleCloseWindow = useCallback(async () => {
+    try {
+      const window = getCurrentWebviewWindow();
+      await window.close();
+    } catch (error) {
+      logError(`Failed to close window: ${error}`);
+      showSnackbar('Failed to close window', 'error');
+    }
+  }, [showSnackbar]);
+
+  // Global context menu handlers
+  const handleGlobalContextMenu = useCallback(event => {
+    event.preventDefault();
+    setGlobalContextMenu({
+      mouseX: event.clientX,
+      mouseY: event.clientY,
+    });
+  }, []);
+
+  const handleCloseGlobalContextMenu = useCallback(() => {
+    setGlobalContextMenu(null);
+  }, []);
 
   return (
     <ThemeProvider theme={theme}>
@@ -543,21 +584,27 @@ function App() {
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
+        onContextMenu={handleGlobalContextMenu}
         ref={dropZoneRef}
       >
         {/* App Bar */}
-        <AppBar position="static" elevation={0}>
-          <Toolbar>
-            <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
+        <AppBar position="static" elevation={0} data-tauri-drag-region>
+          <Toolbar data-tauri-drag-region>
+            <Typography 
+              variant="h6" 
+              component="div" 
+              sx={{ flexGrow: 1, cursor: 'default' }} 
+              data-tauri-drag-region
+            >
               Claude Launcher
             </Typography>
-            
+
             {/* Search Bar */}
             <TextField
               size="small"
               placeholder="Search projects..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={e => setSearchQuery(e.target.value)}
               sx={{
                 mr: 2,
                 width: 300,
@@ -574,10 +621,10 @@ function App() {
             />
 
             {/* Sort Dropdown */}
-            <FormControl 
-              size="small" 
-              sx={{ 
-                mr: 2, 
+            <FormControl
+              size="small"
+              sx={{
+                mr: 2,
                 minWidth: 140,
                 backgroundColor: 'background.paper',
                 borderRadius: 1,
@@ -587,7 +634,7 @@ function App() {
               <Select
                 value={sortOption}
                 label="Sort by"
-                onChange={(e) => handleSortChange(e.target.value)}
+                onChange={e => handleSortChange(e.target.value)}
                 startAdornment={<SortIcon sx={{ mr: 1, color: 'text.secondary' }} />}
               >
                 <MenuItem value="recent">Recently Used</MenuItem>
@@ -607,18 +654,28 @@ function App() {
                 const newTheme = !darkMode;
                 setDarkMode(newTheme);
                 try {
-                  await invoke('set_setting', { 
-                    key: 'theme_preference', 
-                    value: newTheme ? 'dark' : 'light' 
+                  await invoke('set_setting', {
+                    key: 'theme_preference',
+                    value: newTheme ? 'dark' : 'light',
                   });
                 } catch (error) {
                   logError(`Failed to save theme preference: ${error}`);
                 }
               }}
-              aria-label={darkMode ? "Switch to light theme" : "Switch to dark theme"}
+              aria-label={darkMode ? 'Switch to light theme' : 'Switch to dark theme'}
               sx={{ ml: 1 }}
             >
               {darkMode ? <LightModeIcon /> : <DarkModeIcon />}
+            </IconButton>
+
+            {/* Close Button */}
+            <IconButton
+              color="inherit"
+              onClick={handleCloseWindow}
+              aria-label="Close application"
+              sx={{ ml: 1 }}
+            >
+              <CloseIcon />
             </IconButton>
           </Toolbar>
         </AppBar>
@@ -651,7 +708,7 @@ function App() {
                 )}
               </Box>
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                {allTags.map((tag) => (
+                {allTags.map(tag => (
                   <Chip
                     key={tag}
                     label={tag}
@@ -670,7 +727,7 @@ function App() {
               )}
             </Box>
           )}
-          
+
           {loading ? (
             <Box
               sx={{
@@ -733,11 +790,7 @@ function App() {
           onClick={handleAddProject}
           disabled={loadingOperations.add}
         >
-          {loadingOperations.add ? (
-            <CircularProgress size={24} color="inherit" />
-          ) : (
-            <AddIcon />
-          )}
+          {loadingOperations.add ? <CircularProgress size={24} color="inherit" /> : <AddIcon />}
         </Fab>
 
         {/* Delete Confirmation Dialog */}
@@ -748,21 +801,24 @@ function App() {
           <DialogTitle>Delete Project?</DialogTitle>
           <DialogContent>
             <DialogContentText>
-              Are you sure you want to delete this project? This will only remove it from the launcher, not delete any files.
+              Are you sure you want to delete this project? This will only remove it from the
+              launcher, not delete any files.
             </DialogContentText>
           </DialogContent>
           <DialogActions>
             <Button onClick={() => setDeleteDialog({ open: false, projectId: null })}>
               Cancel
             </Button>
-            <Button 
-              onClick={confirmDelete} 
-              color="error" 
+            <Button
+              onClick={confirmDelete}
+              color="error"
               variant="contained"
               disabled={loadingOperations.delete === deleteDialog.projectId}
-              startIcon={loadingOperations.delete === deleteDialog.projectId ? (
-                <CircularProgress size={16} color="inherit" />
-              ) : null}
+              startIcon={
+                loadingOperations.delete === deleteDialog.projectId ? (
+                  <CircularProgress size={16} color="inherit" />
+                ) : null
+              }
             >
               {loadingOperations.delete === deleteDialog.projectId ? 'Deleting...' : 'Delete'}
             </Button>
@@ -784,6 +840,30 @@ function App() {
             {snackbar.message}
           </Alert>
         </Snackbar>
+
+        {/* Global Context Menu */}
+        <Menu
+          open={Boolean(globalContextMenu)}
+          onClose={handleCloseGlobalContextMenu}
+          anchorReference="anchorPosition"
+          anchorPosition={
+            globalContextMenu
+              ? { top: globalContextMenu.mouseY, left: globalContextMenu.mouseX }
+              : undefined
+          }
+        >
+          <MenuItem
+            onClick={() => {
+              handleCloseWindow();
+              handleCloseGlobalContextMenu();
+            }}
+          >
+            <ListItemIcon>
+              <CloseIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Close</ListItemText>
+          </MenuItem>
+        </Menu>
       </Box>
     </ThemeProvider>
   );

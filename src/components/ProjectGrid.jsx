@@ -1,12 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import {
-  Grid,
-  Box,
-  Typography,
-  Divider,
-  useTheme,
-  useMediaQuery,
-} from '@mui/material';
+import { Grid, Box, Typography, Divider, useTheme, useMediaQuery } from '@mui/material';
 import { Masonry } from '@mui/lab';
 import ProjectCard from './ProjectCard';
 
@@ -70,9 +63,7 @@ const ProjectGrid = ({
             Pinned Projects
           </Typography>
           <Masonry columns={isSmallScreen ? 1 : 2} spacing={2}>
-            {pinnedProjects.map((project, index) => 
-              renderProjectCard(project, index)
-            )}
+            {pinnedProjects.map((project, index) => renderProjectCard(project, index))}
           </Masonry>
           <Divider sx={{ mt: 3 }} />
         </Box>
@@ -85,8 +76,8 @@ const ProjectGrid = ({
             Recent Projects
           </Typography>
           <Masonry columns={isSmallScreen ? 1 : 2} spacing={2}>
-            {recentProjects.map((project, index) => 
-              renderProjectCard(project, pinnedProjects.length + index)
+            {recentProjects.map((project, index) =>
+              renderProjectCard(project, pinnedProjects.length + index),
             )}
           </Masonry>
           <Divider sx={{ mt: 3 }} />
@@ -113,11 +104,8 @@ const ProjectGrid = ({
           </Box>
         ) : (
           <Masonry columns={isSmallScreen ? 1 : 2} spacing={2}>
-            {unpinnedProjects.map((project, index) => 
-              renderProjectCard(
-                project, 
-                pinnedProjects.length + recentProjects.length + index
-              )
+            {unpinnedProjects.map((project, index) =>
+              renderProjectCard(project, pinnedProjects.length + recentProjects.length + index),
             )}
           </Masonry>
         )}
