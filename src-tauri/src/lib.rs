@@ -23,6 +23,8 @@ struct Project {
     pinned: bool,
     last_used: Option<String>,
     background_color: Option<String>,
+    icon: Option<String>,
+    icon_size: Option<u32>,
     continue_flag: bool,
 }
 
@@ -33,6 +35,8 @@ struct ProjectUpdate {
     notes: Option<String>,
     pinned: Option<bool>,
     background_color: Option<String>,
+    icon: Option<String>,
+    icon_size: Option<u32>,
     continue_flag: Option<bool>,
 }
 
@@ -71,6 +75,8 @@ impl AppDatabase {
                 pinned BOOLEAN DEFAULT 0,
                 last_used TEXT,
                 background_color TEXT,
+                icon TEXT,
+                icon_size INTEGER,
                 continue_flag BOOLEAN DEFAULT 0
             )",
             [],
@@ -176,6 +182,46 @@ impl AppDatabase {
                 Err(e) => warn!("Could not add continue_flag column: {}", e),
             }
         }
+
+        // Add icon column if it doesn't exist (for existing databases)
+        let has_icon: bool = conn
+            .query_row(
+                "SELECT COUNT(*) > 0 FROM pragma_table_info('projects') WHERE name = 'icon'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(false);
+        
+        if !has_icon {
+            info!("Adding icon column to projects table");
+            match conn.execute(
+                "ALTER TABLE projects ADD COLUMN icon TEXT",
+                [],
+            ) {
+                Ok(_) => info!("Successfully added icon column"),
+                Err(e) => warn!("Could not add icon column: {}", e),
+            }
+        }
+
+        // Add icon_size column if it doesn't exist (for existing databases)
+        let has_icon_size: bool = conn
+            .query_row(
+                "SELECT COUNT(*) > 0 FROM pragma_table_info('projects') WHERE name = 'icon_size'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(false);
+        
+        if !has_icon_size {
+            info!("Adding icon_size column to projects table");
+            match conn.execute(
+                "ALTER TABLE projects ADD COLUMN icon_size INTEGER",
+                [],
+            ) {
+                Ok(_) => info!("Successfully added icon_size column"),
+                Err(e) => warn!("Could not add icon_size column: {}", e),
+            }
+        }
         
         Ok(AppDatabase {
             conn: Mutex::new(conn),
@@ -218,8 +264,8 @@ impl AppDatabase {
         
         // Try to insert the project
         let result = conn.execute(
-            "INSERT INTO projects (id, path, name, tags, notes, pinned, last_used, background_color, continue_flag) 
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            "INSERT INTO projects (id, path, name, tags, notes, pinned, last_used, background_color, icon, icon_size, continue_flag) 
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             params![
                 &id,
                 &path,
@@ -229,6 +275,8 @@ impl AppDatabase {
                 false,
                 Option::<String>::None,
                 Option::<String>::None,
+                Option::<String>::None,
+                Option::<u32>::None,
                 false
             ],
         );
@@ -246,6 +294,8 @@ impl AppDatabase {
                     pinned: false,
                     last_used: None,
                     background_color: None,
+                    icon: None,
+                    icon_size: None,
                     continue_flag: false,
                 })
             }
@@ -254,7 +304,7 @@ impl AppDatabase {
                 // Project already exists, fetch and return it
                 info!("Project already exists at path: {}, returning existing project", path);
                 conn.query_row(
-                    "SELECT id, path, name, tags, notes, pinned, last_used, background_color, continue_flag
+                    "SELECT id, path, name, tags, notes, pinned, last_used, background_color, icon, icon_size, continue_flag
                      FROM projects WHERE path = ?1",
                     params![&path],
                     |row| {
@@ -267,7 +317,9 @@ impl AppDatabase {
                             pinned: row.get(5)?,
                             last_used: row.get(6)?,
                             background_color: row.get(7)?,
-                            continue_flag: row.get(8)?,
+                            icon: row.get(8)?,
+                            icon_size: row.get(9)?,
+                            continue_flag: row.get(10)?,
                         })
                     },
                 )
@@ -294,7 +346,7 @@ impl AppDatabase {
         
         let mut stmt = conn
             .prepare(
-                "SELECT id, path, name, tags, notes, pinned, last_used, background_color, continue_flag
+                "SELECT id, path, name, tags, notes, pinned, last_used, background_color, icon, icon_size, continue_flag
                  FROM projects 
                  ORDER BY pinned DESC, last_used DESC NULLS LAST",
             )
@@ -311,7 +363,9 @@ impl AppDatabase {
                     pinned: row.get(5)?,
                     last_used: row.get(6)?,
                     background_color: row.get(7)?,
-                    continue_flag: row.get(8)?,
+                    icon: row.get(8)?,
+                    icon_size: row.get(9)?,
+                    continue_flag: row.get(10)?,
                 })
             })
             .map_err(|e| e.to_string())?
@@ -337,7 +391,7 @@ impl AppDatabase {
         
         let mut stmt = conn
             .prepare(
-                "SELECT id, path, name, tags, notes, pinned, last_used, background_color, continue_flag
+                "SELECT id, path, name, tags, notes, pinned, last_used, background_color, icon, icon_size, continue_flag
                  FROM projects 
                  WHERE last_used IS NOT NULL
                  ORDER BY last_used DESC
@@ -356,7 +410,9 @@ impl AppDatabase {
                     pinned: row.get(5)?,
                     last_used: row.get(6)?,
                     background_color: row.get(7)?,
-                    continue_flag: row.get(8)?,
+                    icon: row.get(8)?,
+                    icon_size: row.get(9)?,
+                    continue_flag: row.get(10)?,
                 })
             })
             .map_err(|e| e.to_string())?
@@ -400,6 +456,16 @@ impl AppDatabase {
                 params.push(Box::new(background_color.clone()));
             }
             
+            if let Some(icon) = &updates.icon {
+                sql_parts.push("icon = ?");
+                params.push(Box::new(icon.clone()));
+            }
+            
+            if let Some(icon_size) = &updates.icon_size {
+                sql_parts.push("icon_size = ?");
+                params.push(Box::new(*icon_size));
+            }
+            
             if let Some(continue_flag) = &updates.continue_flag {
                 sql_parts.push("continue_flag = ?");
                 params.push(Box::new(*continue_flag));
@@ -433,7 +499,7 @@ impl AppDatabase {
         let conn = self.conn.lock();
         
         conn.query_row(
-            "SELECT id, path, name, tags, notes, pinned, last_used, background_color, continue_flag
+            "SELECT id, path, name, tags, notes, pinned, last_used, background_color, icon, icon_size, continue_flag
              FROM projects WHERE id = ?1",
             params![id],
             |row| {
@@ -446,7 +512,9 @@ impl AppDatabase {
                     pinned: row.get(5)?,
                     last_used: row.get(6)?,
                     background_color: row.get(7)?,
-                    continue_flag: row.get(8)?,
+                    icon: row.get(8)?,
+                    icon_size: row.get(9)?,
+                    continue_flag: row.get(10)?,
                 })
             },
         )
@@ -522,6 +590,136 @@ impl AppDatabase {
         {
             let mut cache = self.settings_cache.lock();
             cache.put(key.to_string(), value.to_string());
+        }
+        
+        Ok(())
+    }
+
+    // Custom icon utility methods
+    fn get_custom_icons_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
+        #[cfg(windows)]
+        {
+            let app_data = std::env::var("APPDATA")?;
+            let path = PathBuf::from(app_data)
+                .join("ClaudeLauncher")
+                .join("custom-icons");
+            Ok(path)
+        }
+        
+        #[cfg(not(windows))]
+        {
+            let home = dirs::data_dir()
+                .ok_or("Could not find data directory")?;
+            let path = home
+                .join("claude-launcher")
+                .join("custom-icons");
+            Ok(path)
+        }
+    }
+
+    fn ensure_custom_icons_dir() -> Result<PathBuf, String> {
+        let icons_dir = Self::get_custom_icons_dir()
+            .map_err(|e| format!("Failed to get custom icons directory: {}", e))?;
+        
+        if !icons_dir.exists() {
+            std::fs::create_dir_all(&icons_dir)
+                .map_err(|e| format!("Failed to create custom icons directory: {}", e))?;
+        }
+        
+        Ok(icons_dir)
+    }
+
+    fn validate_icon_file_format(file_path: &str) -> Result<(), String> {
+        let path = std::path::Path::new(file_path);
+        
+        // Check if file exists
+        if !path.exists() {
+            return Err("File does not exist".to_string());
+        }
+        
+        // Check file extension
+        let extension = path.extension()
+            .and_then(|ext| ext.to_str())
+            .map(|ext| ext.to_lowercase())
+            .ok_or("File has no extension")?;
+        
+        match extension.as_str() {
+            "svg" | "png" | "jpg" | "jpeg" | "ico" | "webp" => Ok(()),
+            _ => Err(format!("Unsupported file format: {}", extension)),
+        }
+    }
+
+    fn get_custom_icon_files(&self) -> Result<Vec<serde_json::Value>, String> {
+        let icons_dir = Self::ensure_custom_icons_dir()?;
+        
+        let mut icons = Vec::new();
+        
+        match std::fs::read_dir(&icons_dir) {
+            Ok(entries) => {
+                for entry in entries {
+                    if let Ok(entry) = entry {
+                        let path = entry.path();
+                        if path.is_file() {
+                            if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
+                                // Extract the extension for type information
+                                let extension = path.extension()
+                                    .and_then(|ext| ext.to_str())
+                                    .unwrap_or("unknown");
+                                
+                                icons.push(serde_json::json!({
+                                    "id": filename,
+                                    "name": filename,
+                                    "type": extension,
+                                    "path": format!("custom://{}", filename)
+                                }));
+                            }
+                        }
+                    }
+                }
+            }
+            Err(_) => {
+                // Directory doesn't exist or can't be read, return empty list
+                return Ok(vec![]);
+            }
+        }
+        
+        // Sort by filename for consistent ordering
+        icons.sort_by(|a, b| {
+            a["name"].as_str().unwrap_or("").cmp(b["name"].as_str().unwrap_or(""))
+        });
+        
+        Ok(icons)
+    }
+
+    fn delete_custom_icon_file(&self, icon_id: &str) -> Result<(), String> {
+        let icons_dir = Self::ensure_custom_icons_dir()?;
+        let icon_path = icons_dir.join(icon_id);
+        
+        if !icon_path.exists() {
+            return Err("Custom icon file not found".to_string());
+        }
+        
+        std::fs::remove_file(&icon_path)
+            .map_err(|e| format!("Failed to delete custom icon file: {}", e))?;
+        
+        // Also update any projects that were using this icon
+        let custom_icon_path = format!("custom://{}", icon_id);
+        let conn = self.conn.lock();
+        
+        // Update projects using this icon to clear the icon field
+        match conn.execute(
+            "UPDATE projects SET icon = NULL WHERE icon = ?1",
+            params![&custom_icon_path],
+        ) {
+            Ok(updated_count) => {
+                if updated_count > 0 {
+                    info!("Cleared icon from {} projects after deleting custom icon {}", updated_count, icon_id);
+                    // Invalidate cache since we updated projects
+                    drop(conn); // Release lock before calling invalidate
+                    self.invalidate_projects_cache();
+                }
+            }
+            Err(e) => warn!("Failed to clear icon from projects: {}", e),
         }
         
         Ok(())
@@ -821,6 +1019,88 @@ async fn set_setting(key: String, value: String, db: State<'_, AppDatabase>) -> 
     db.set_setting(&key, &value)
 }
 
+#[tauri::command]
+async fn upload_custom_icon(
+    _db: State<'_, AppDatabase>,
+    source_path: String,
+    desired_name: Option<String>,
+) -> Result<serde_json::Value, String> {
+    info!("Uploading custom icon from: {}", source_path);
+    
+    // Validate the source file
+    AppDatabase::validate_icon_file_format(&source_path)?;
+    
+    let icons_dir = AppDatabase::ensure_custom_icons_dir()?;
+    
+    // Generate a unique filename
+    let source_file = std::path::Path::new(&source_path);
+    let extension = source_file.extension()
+        .and_then(|ext| ext.to_str())
+        .ok_or("File has no extension")?;
+    
+    let filename = if let Some(name) = desired_name {
+        // Use desired name but ensure it has the correct extension
+        let clean_name = name.trim()
+            .replace(|c: char| !c.is_alphanumeric() && c != '-' && c != '_', "_");
+        format!("{}_{}.{}", clean_name, Uuid::new_v4().to_string()[0..8].to_string(), extension)
+    } else {
+        // Generate UUID-based filename
+        format!("icon_{}.{}", Uuid::new_v4().to_string().replace("-", ""), extension)
+    };
+    
+    let dest_path = icons_dir.join(&filename);
+    
+    // Copy the file to the custom icons directory
+    std::fs::copy(&source_path, &dest_path)
+        .map_err(|e| format!("Failed to copy icon file: {}", e))?;
+    
+    info!("Successfully uploaded custom icon: {}", filename);
+    
+    Ok(serde_json::json!({
+        "success": true,
+        "icon": {
+            "id": filename,
+            "name": filename,
+            "type": extension,
+            "path": format!("custom://{}", filename)
+        }
+    }))
+}
+
+#[tauri::command]
+async fn get_custom_icons(db: State<'_, AppDatabase>) -> Result<Vec<serde_json::Value>, String> {
+    db.get_custom_icon_files()
+}
+
+#[tauri::command]
+async fn delete_custom_icon(
+    db: State<'_, AppDatabase>,
+    icon_id: String,
+) -> Result<serde_json::Value, String> {
+    info!("Deleting custom icon: {}", icon_id);
+    
+    db.delete_custom_icon_file(&icon_id)?;
+    
+    Ok(serde_json::json!({
+        "success": true,
+        "message": format!("Custom icon '{}' deleted successfully", icon_id)
+    }))
+}
+
+#[tauri::command]
+async fn get_custom_icon_path(icon_id: String) -> Result<String, String> {
+    let icons_dir = AppDatabase::ensure_custom_icons_dir()?;
+    let icon_path = icons_dir.join(&icon_id);
+    
+    if !icon_path.exists() {
+        return Err("Custom icon file not found".to_string());
+    }
+    
+    icon_path.to_str()
+        .ok_or("Invalid icon path".to_string())
+        .map(|s| s.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     info!("Starting Claude Launcher...");
@@ -906,7 +1186,11 @@ pub fn run() {
             delete_project,
             check_claude_installed,
             get_setting,
-            set_setting
+            set_setting,
+            upload_custom_icon,
+            get_custom_icons,
+            delete_custom_icon,
+            get_custom_icon_path
         ])
         .on_window_event(|_window, event| {
             debug!("Window event: {:?}", event);
@@ -939,6 +1223,7 @@ mod tests {
                 pinned BOOLEAN NOT NULL DEFAULT 0,
                 last_used TEXT,
                 background_color TEXT,
+                icon TEXT,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 continue_flag BOOLEAN NOT NULL DEFAULT 0
             )",
@@ -982,6 +1267,8 @@ mod tests {
             pinned: true,
             last_used: Some("2024-01-01T00:00:00Z".to_string()),
             background_color: Some("#ff5722".to_string()),
+            icon: Some("Code".to_string()),
+            continue_flag: false,
         };
         
         // Test serialization
@@ -1062,6 +1349,8 @@ mod tests {
             notes: Some("New notes".to_string()),
             pinned: Some(true),
             background_color: Some("#2196f3".to_string()),
+            icon: Some("Terminal".to_string()),
+            continue_flag: None,
         };
         
         let result = db.update_project(project.id.clone(), updates);
@@ -1075,6 +1364,7 @@ mod tests {
         assert_eq!(updated.notes, "New notes");
         assert!(updated.pinned);
         assert_eq!(updated.background_color, Some("#2196f3".to_string()));
+        assert_eq!(updated.icon, Some("Terminal".to_string()));
     }
     
     #[test]
@@ -1162,6 +1452,8 @@ mod tests {
             notes: None,
             pinned: Some(true),
             background_color: None,
+            icon: None,
+            continue_flag: None,
         };
         db.update_project(project2.id, updates).unwrap();
         
@@ -1183,6 +1475,8 @@ mod tests {
             notes: None,
             pinned: None,
             background_color: None,
+            icon: None,
+            continue_flag: None,
         };
         let updated = db.update_project(project.id.clone(), updates).unwrap();
         

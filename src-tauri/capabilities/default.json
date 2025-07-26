@@ -6,6 +6,10 @@
   "permissions": [
     "core:default",
     "core:event:allow-listen",
+    "core:window:default",
+    "core:window:allow-close",
+    "core:webview:default",
+    "core:webview:allow-webview-close",
     "opener:default",
     "shell:default",
     "dialog:default",

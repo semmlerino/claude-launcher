@@ -28,6 +28,8 @@ import {
 } from '@mui/icons-material';
 import ContextMenu from './ContextMenu';
 import ColorPicker from './ColorPicker';
+import IconPicker from './IconPicker';
+import IconRenderer from './IconRenderer';
 
 const ProjectCard = React.memo(
   ({
@@ -49,6 +51,7 @@ const ProjectCard = React.memo(
     const [renameValue, setRenameValue] = useState(project.name);
     const [contextMenu, setContextMenu] = useState(null);
     const [colorPickerOpen, setColorPickerOpen] = useState(false);
+    const [iconPickerOpen, setIconPickerOpen] = useState(false);
 
     const handleSaveEdit = async () => {
       await onUpdate(project.id, {
@@ -104,6 +107,14 @@ const ProjectCard = React.memo(
 
     const handleColorChange = color => {
       onUpdate(project.id, { background_color: color });
+    };
+
+    const handleIconChange = icon => {
+      onUpdate(project.id, { icon: icon });
+    };
+
+    const handleIconSizeChange = iconSize => {
+      onUpdate(project.id, { icon_size: iconSize });
     };
 
     const handleOpenFolder = async () => {
@@ -202,9 +213,17 @@ const ProjectCard = React.memo(
               sx={{ mb: 2 }}
             />
           ) : (
-            <Typography variant="h6" component="h2" gutterBottom>
-              {project.name}
-            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+              {project.icon && (
+                <IconRenderer 
+                  iconName={project.icon}
+                  sx={{ mr: 1, fontSize: project.icon_size || 32, color: 'primary.main' }}
+                />
+              )}
+              <Typography variant="h6" component="h2">
+                {project.name}
+              </Typography>
+            </Box>
           )}
 
           {/* Project Path */}
@@ -383,6 +402,7 @@ const ProjectCard = React.memo(
           onClose={handleCloseContextMenu}
           onRename={handleRename}
           onChangeColor={() => setColorPickerOpen(true)}
+          onChangeIcon={() => setIconPickerOpen(true)}
           onOpenFolder={handleOpenFolder}
           onDelete={() => onDelete(project.id)}
         />
@@ -393,6 +413,16 @@ const ProjectCard = React.memo(
           onClose={() => setColorPickerOpen(false)}
           onColorSelect={handleColorChange}
           currentColor={project.background_color}
+        />
+
+        {/* Icon Picker Dialog */}
+        <IconPicker
+          open={iconPickerOpen}
+          onClose={() => setIconPickerOpen(false)}
+          onIconSelect={handleIconChange}
+          currentIcon={project.icon}
+          currentIconSize={project.icon_size}
+          onIconSizeSelect={handleIconSizeChange}
         />
       </Card>
     );
