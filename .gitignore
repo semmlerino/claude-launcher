@@ -23,8 +23,8 @@ dist-ssr/
 # Tauri/Rust
 src-tauri/target/
 src-tauri/WixTools/
-src-tauri/Cargo.lock
 **/*.rs.bk
+# Note: Cargo.lock is tracked for Tauri apps (binaries) for reproducible builds
 
 # Build outputs
 build/
@@ -99,6 +99,7 @@ coverage/
 *.lcov
 .coverage
 .pytest_cache/
+test-results.json
 
 # IDE specific
 *.iml
