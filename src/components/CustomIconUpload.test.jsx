@@ -51,13 +51,13 @@ describe('CustomIconUpload', () => {
   describe('File Selection', () => {
     it('shows file selection button initially', () => {
       render(
-        <CustomIconUpload 
+        <CustomIconUpload
           open={true}
           onClose={mockOnClose}
           onIconUploaded={mockOnIconUploaded}
         />
       );
-      
+
       expect(screen.getByText('Select Icon File')).toBeInTheDocument();
     });
 
@@ -65,27 +65,30 @@ describe('CustomIconUpload', () => {
       const { open } = await import('@tauri-apps/plugin-dialog');
       open.mockResolvedValue('/path/to/icon.svg');
 
-      const user = userEvent.setup();
-      
+      const user = userEvent.setup({ delay: null }); // Remove delay for faster testing
+
       render(
-        <CustomIconUpload 
+        <CustomIconUpload
           open={true}
           onClose={mockOnClose}
           onIconUploaded={mockOnIconUploaded}
         />
       );
-      
+
       await user.click(screen.getByText('Select Icon File'));
-      
-      expect(open).toHaveBeenCalledWith({
-        title: 'Select Icon File',
-        multiple: false,
-        filters: [
-          {
-            name: 'Image Files',
-            extensions: ['svg', 'png', 'jpg', 'jpeg', 'ico', 'webp']
-          }
-        ]
+
+      // Wait for the async operation to complete
+      await waitFor(() => {
+        expect(open).toHaveBeenCalledWith({
+          title: 'Select Icon File',
+          multiple: false,
+          filters: [
+            {
+              name: 'Image Files',
+              extensions: ['svg', 'png', 'jpg', 'jpeg', 'ico', 'webp']
+            }
+          ]
+        });
       });
     });
 
@@ -93,16 +96,16 @@ describe('CustomIconUpload', () => {
       const { open } = await import('@tauri-apps/plugin-dialog');
       open.mockResolvedValue('/path/to/my-icon.svg');
 
-      const user = userEvent.setup();
-      
+      const user = userEvent.setup({ delay: null });
+
       render(
-        <CustomIconUpload 
+        <CustomIconUpload
           open={true}
           onClose={mockOnClose}
           onIconUploaded={mockOnIconUploaded}
         />
       );
-      
+
       await user.click(screen.getByText('Select Icon File'));
       
       await waitFor(() => {
@@ -115,18 +118,18 @@ describe('CustomIconUpload', () => {
       const { open } = await import('@tauri-apps/plugin-dialog');
       open.mockResolvedValue('/path/to/icon.png');
 
-      const user = userEvent.setup();
-      
+      const user = userEvent.setup({ delay: null });
+
       render(
-        <CustomIconUpload 
+        <CustomIconUpload
           open={true}
           onClose={mockOnClose}
           onIconUploaded={mockOnIconUploaded}
         />
       );
-      
+
       await user.click(screen.getByText('Select Icon File'));
-      
+
       await waitFor(() => {
         expect(screen.getByText('Preview:')).toBeInTheDocument();
         const preview = screen.getByAltText('Icon preview');
@@ -137,31 +140,31 @@ describe('CustomIconUpload', () => {
 
   describe('Custom Name Input', () => {
     it('allows entering a custom name for the icon', async () => {
-      const user = userEvent.setup();
-      
+      const user = userEvent.setup({ delay: null });
+
       render(
-        <CustomIconUpload 
+        <CustomIconUpload
           open={true}
           onClose={mockOnClose}
           onIconUploaded={mockOnIconUploaded}
         />
       );
-      
+
       const nameInput = screen.getByLabelText('Custom Name (Optional)');
       await user.type(nameInput, 'My Custom Icon');
-      
+
       expect(nameInput).toHaveValue('My Custom Icon');
     });
 
     it('shows helper text for the custom name input', () => {
       render(
-        <CustomIconUpload 
+        <CustomIconUpload
           open={true}
           onClose={mockOnClose}
           onIconUploaded={mockOnIconUploaded}
         />
       );
-      
+
       expect(screen.getByText('If left empty, a unique name will be generated')).toBeInTheDocument();
     });
   });
@@ -169,13 +172,13 @@ describe('CustomIconUpload', () => {
   describe('Upload Process', () => {
     it('disables upload button when no file is selected', () => {
       render(
-        <CustomIconUpload 
+        <CustomIconUpload
           open={true}
           onClose={mockOnClose}
           onIconUploaded={mockOnIconUploaded}
         />
       );
-      
+
       const uploadButton = screen.getByText('Upload');
       expect(uploadButton).toBeDisabled();
     });
@@ -184,18 +187,18 @@ describe('CustomIconUpload', () => {
       const { open } = await import('@tauri-apps/plugin-dialog');
       open.mockResolvedValue('/path/to/icon.svg');
 
-      const user = userEvent.setup();
-      
+      const user = userEvent.setup({ delay: null });
+
       render(
-        <CustomIconUpload 
+        <CustomIconUpload
           open={true}
           onClose={mockOnClose}
           onIconUploaded={mockOnIconUploaded}
         />
       );
-      
+
       await user.click(screen.getByText('Select Icon File'));
-      
+
       await waitFor(() => {
         const uploadButton = screen.getByText('Upload');
         expect(uploadButton).not.toBeDisabled();
@@ -205,7 +208,7 @@ describe('CustomIconUpload', () => {
     it('calls invoke with correct parameters on upload', async () => {
       const { open } = await import('@tauri-apps/plugin-dialog');
       const { invoke } = await import('@tauri-apps/api/core');
-      
+
       open.mockResolvedValue('/path/to/icon.svg');
       invoke.mockResolvedValue({
         success: true,
@@ -217,61 +220,74 @@ describe('CustomIconUpload', () => {
         }
       });
 
-      const user = userEvent.setup();
-      
+      const user = userEvent.setup({ delay: null });
+
       render(
-        <CustomIconUpload 
+        <CustomIconUpload
           open={true}
           onClose={mockOnClose}
           onIconUploaded={mockOnIconUploaded}
         />
       );
-      
+
       // Select file
       await user.click(screen.getByText('Select Icon File'));
-      
+
+      // Wait for file to be selected
+      await waitFor(() => {
+        expect(screen.getByText('Change File')).toBeInTheDocument();
+      });
+
       // Enter custom name
       await user.type(screen.getByLabelText('Custom Name (Optional)'), 'My Icon');
-      
+
       // Upload
       await user.click(screen.getByText('Upload'));
-      
-      expect(invoke).toHaveBeenCalledWith('upload_custom_icon', {
-        sourcePath: '/path/to/icon.svg',
-        desiredName: 'My Icon'
+
+      await waitFor(() => {
+        expect(invoke).toHaveBeenCalledWith('upload_custom_icon', {
+          sourcePath: '/path/to/icon.svg',
+          desiredName: 'My Icon'
+        });
       });
     });
 
     it('calls onIconUploaded callback on successful upload', async () => {
       const { open } = await import('@tauri-apps/plugin-dialog');
       const { invoke } = await import('@tauri-apps/api/core');
-      
+
       const mockIcon = {
         id: 'icon123.svg',
         name: 'icon123.svg',
         type: 'svg',
         path: 'custom://icon123.svg'
       };
-      
+
       open.mockResolvedValue('/path/to/icon.svg');
       invoke.mockResolvedValue({
         success: true,
         icon: mockIcon
       });
 
-      const user = userEvent.setup();
-      
+      const user = userEvent.setup({ delay: null });
+
       render(
-        <CustomIconUpload 
+        <CustomIconUpload
           open={true}
           onClose={mockOnClose}
           onIconUploaded={mockOnIconUploaded}
         />
       );
-      
+
       await user.click(screen.getByText('Select Icon File'));
+
+      // Wait for file to be selected
+      await waitFor(() => {
+        expect(screen.getByText('Change File')).toBeInTheDocument();
+      });
+
       await user.click(screen.getByText('Upload'));
-      
+
       await waitFor(() => {
         expect(mockOnIconUploaded).toHaveBeenCalledWith(mockIcon);
         expect(mockOnClose).toHaveBeenCalled();
@@ -281,23 +297,32 @@ describe('CustomIconUpload', () => {
     it('shows error message on upload failure', async () => {
       const { open } = await import('@tauri-apps/plugin-dialog');
       const { invoke } = await import('@tauri-apps/api/core');
-      
+
       open.mockResolvedValue('/path/to/icon.svg');
       invoke.mockRejectedValue(new Error('Upload failed'));
 
-      const user = userEvent.setup();
-      
+      const user = userEvent.setup({ delay: null });
+
       render(
-        <CustomIconUpload 
+        <CustomIconUpload
           open={true}
           onClose={mockOnClose}
           onIconUploaded={mockOnIconUploaded}
         />
       );
-      
+
+      // Select file first
       await user.click(screen.getByText('Select Icon File'));
+
+      // Wait for file to be selected
+      await waitFor(() => {
+        expect(screen.getByText('Change File')).toBeInTheDocument();
+      });
+
+      // Now upload
       await user.click(screen.getByText('Upload'));
-      
+
+      // Wait for error message
       await waitFor(() => {
         expect(screen.getByText('Upload failed')).toBeInTheDocument();
       });

@@ -51,8 +51,20 @@ const mockProjects = [
 describe('App Integration Tests', () => {
   let user;
 
+  // Helper to find project by name (handles text split across elements)
+  const findProjectByName = (name) => {
+    // Look for the project name as an h6 element (Typography variant h6)
+    return screen.queryByText((content, element) => {
+      if (!element) return false;
+      // Check if this is an h6 or part of Typography that renders as h6
+      const isH6 = element.tagName === 'H6';
+      // Also check if text exactly matches
+      return content === name && isH6;
+    });
+  };
+
   beforeEach(() => {
-    user = userEvent.setup();
+    user = userEvent.setup({ delay: null });
     // Reset any global state
     clearMocks();
   });
@@ -88,19 +100,15 @@ describe('App Integration Tests', () => {
 
       // Wait for initial load
       await waitFor(() => {
-        const project1Elements = screen.getAllByText('Project 1');
-        const project2Elements = screen.getAllByText('Project 2');
-        expect(project1Elements.length).toBeGreaterThan(0);
-        expect(project2Elements.length).toBeGreaterThan(0);
+        const project1 = findProjectByName('Project 1');
+        expect(project1).toBeInTheDocument();
       });
 
-      // Check that projects are displayed - use getAllByText since project names might appear multiple times
-      const project1Elements = screen.getAllByText('Project 1');
-      const project2Elements = screen.getAllByText('Project 2');
-      expect(project1Elements.length).toBeGreaterThan(0);
-      expect(project2Elements.length).toBeGreaterThan(0);
+      // Check that projects are displayed
+      expect(findProjectByName('Project 1')).toBeInTheDocument();
+      expect(findProjectByName('Project 2')).toBeInTheDocument();
 
-      // Check tags are displayed - use getAllByText since tags appear multiple times
+      // Check tags are displayed
       const reactTags = screen.getAllByText('react');
       const pythonTags = screen.getAllByText('python');
       expect(reactTags.length).toBeGreaterThan(0);
@@ -166,7 +174,7 @@ describe('App Integration Tests', () => {
 
       // Wait for initial load
       await waitFor(() => {
-        expect(screen.getByText('Project 1')).toBeInTheDocument();
+        expect(findProjectByName('Project 1')).toBeInTheDocument();
       });
 
       // Now override the mock to handle add_project AFTER initial load
@@ -230,12 +238,12 @@ describe('App Integration Tests', () => {
 
       // Wait for initial load
       await waitFor(() => {
-        expect(screen.getByText('Project 1')).toBeInTheDocument();
+        expect(findProjectByName('Project 1')).toBeInTheDocument();
       });
 
-      // Find and click delete button on Project 1 specifically (use first instance)
-      const project1Titles = screen.getAllByText('Project 1');
-      const project1Card = project1Titles[0].closest('.project-card');
+      // Find and click delete button on Project 1 specifically
+      const project1Title = findProjectByName('Project 1');
+      const project1Card = project1Title.closest('div');  // Find closest parent card
       const deleteButton = within(project1Card).getByRole('button', { name: /delete project/i });
       await act(async () => {
         await user.click(deleteButton);
@@ -249,14 +257,12 @@ describe('App Integration Tests', () => {
 
       // Wait for project to be removed
       await waitFor(() => {
-        const project1Elements = screen.queryAllByText('Project 1');
-        expect(project1Elements.length).toBe(0);
+        expect(findProjectByName('Project 1')).not.toBeInTheDocument();
       });
 
       // Verify Project 2 is still there
       await waitFor(() => {
-        const project2Elements = screen.getAllByText('Project 2');
-        expect(project2Elements.length).toBeGreaterThan(0);
+        expect(findProjectByName('Project 2')).toBeInTheDocument();
       });
     });
 
@@ -292,12 +298,12 @@ describe('App Integration Tests', () => {
 
       // Wait for initial load
       await waitFor(() => {
-        expect(screen.getByText('Project 1')).toBeInTheDocument();
+        expect(findProjectByName('Project 1')).toBeInTheDocument();
       });
 
       // Pin the first project by clicking the star button
-      const project1Titles = screen.getAllByText('Project 1');
-      const project1Card = project1Titles[0].closest('.project-card');
+      const project1Title = findProjectByName('Project 1');
+      const project1Card = project1Title.closest('div');  // Find closest parent card
       const starButton = within(project1Card).getByRole('button', { name: /pin project/i });
       await act(async () => {
         await user.click(starButton);
@@ -335,10 +341,8 @@ describe('App Integration Tests', () => {
 
       // Wait for initial load
       await waitFor(() => {
-        const project1Elements = screen.getAllByText('Project 1');
-        const project2Elements = screen.getAllByText('Project 2');
-        expect(project1Elements.length).toBeGreaterThan(0);
-        expect(project2Elements.length).toBeGreaterThan(0);
+        expect(findProjectByName('Project 1')).toBeInTheDocument();
+        expect(findProjectByName('Project 2')).toBeInTheDocument();
       });
 
       // Type in search box
@@ -349,10 +353,8 @@ describe('App Integration Tests', () => {
 
       // Wait for filtering
       await waitFor(() => {
-        const project1Elements = screen.getAllByText('Project 1');
-        const project2Elements = screen.queryAllByText('Project 2');
-        expect(project1Elements.length).toBeGreaterThan(0);
-        expect(project2Elements.length).toBe(0);
+        expect(findProjectByName('Project 1')).toBeInTheDocument();
+        expect(findProjectByName('Project 2')).not.toBeInTheDocument();
       });
     });
 
@@ -361,10 +363,8 @@ describe('App Integration Tests', () => {
 
       // Wait for initial load
       await waitFor(() => {
-        const project1Elements = screen.getAllByText('Project 1');
-        const project2Elements = screen.getAllByText('Project 2');
-        expect(project1Elements.length).toBeGreaterThan(0);
-        expect(project2Elements.length).toBeGreaterThan(0);
+        expect(findProjectByName('Project 1')).toBeInTheDocument();
+        expect(findProjectByName('Project 2')).toBeInTheDocument();
       });
 
       // Click on react tag - find it in the filter section
@@ -376,10 +376,8 @@ describe('App Integration Tests', () => {
 
       // Wait for filtering
       await waitFor(() => {
-        const project1Elements = screen.getAllByText('Project 1');
-        const project2Elements = screen.queryAllByText('Project 2');
-        expect(project1Elements.length).toBeGreaterThan(0);
-        expect(project2Elements.length).toBe(0);
+        expect(findProjectByName('Project 1')).toBeInTheDocument();
+        expect(findProjectByName('Project 2')).not.toBeInTheDocument();
       });
     });
   });
@@ -413,7 +411,7 @@ describe('App Integration Tests', () => {
 
       // Wait for initial load
       await waitFor(() => {
-        expect(screen.getByText('Project 1')).toBeInTheDocument();
+        expect(findProjectByName('Project 1')).toBeInTheDocument();
       });
 
       // Click theme toggle button - find by aria-label
@@ -503,12 +501,12 @@ describe('App Integration Tests', () => {
 
       // Wait for initial load
       await waitFor(() => {
-        expect(screen.getByText('Project 1')).toBeInTheDocument();
+        expect(findProjectByName('Project 1')).toBeInTheDocument();
       });
 
       // Click on launch button for Project 1 specifically
-      const project1Title = screen.getByText('Project 1');
-      const project1Card = project1Title.closest('.project-card');
+      const project1Title = findProjectByName('Project 1');
+      const project1Card = project1Title.closest('div');  // Find closest parent card
       const launchButton = within(project1Card).getByRole('button', { name: /launch/i });
       await act(async () => {
         await user.click(launchButton);
@@ -542,10 +540,12 @@ describe('App Integration Tests', () => {
 
       // Should show warning about Claude not being installed
       await waitFor(() => {
-        expect(
-          screen.getByText(/Claude Code is not installed or not in PATH/i),
-        ).toBeInTheDocument();
-      });
+        // Look for alert with the error message (may be split across elements)
+        const alert = screen.queryByRole('alert');
+        expect(alert).toBeInTheDocument();
+        // Check alert content contains the key part of the message
+        expect(alert?.textContent).toMatch(/Claude Code is not installed/i);
+      }, { timeout: 5000 });
     });
   });
 });

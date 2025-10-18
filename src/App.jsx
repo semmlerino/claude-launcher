@@ -180,9 +180,10 @@ function App() {
         invoke('get_projects'),
         invoke('get_recent_projects', { limit: 5 }),
       ]);
-      setProjects(allProjects);
-      setRecentProjects(recent);
-      info(`Loaded ${allProjects.length} projects`);
+      // Ensure we always set an array, not undefined
+      setProjects(allProjects || []);
+      setRecentProjects(recent || []);
+      info(`Loaded ${(allProjects || []).length} projects`);
     } catch (error) {
       logError(`Failed to load projects: ${error}`);
       showSnackbar(`Failed to load projects: ${error}`, 'error');

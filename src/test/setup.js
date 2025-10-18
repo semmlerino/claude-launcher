@@ -56,6 +56,15 @@ vi.mock('@mui/material', () => {
         background: { default: '#f5f5f5', paper: '#fff' },
         text: { primary: '#000', secondary: '#666' },
       },
+      breakpoints: {
+        up: () => '@media (min-width:0px)',
+        down: () => '@media (max-width:960px)',
+        between: () => '@media (min-width:600px) and (max-width:960px)',
+        only: () => '@media (min-width:600px) and (max-width:960px)',
+        values: { xs: 0, sm: 600, md: 960, lg: 1280, xl: 1920 },
+      },
+      shadows: Array(25).fill('0px 0px 0px rgba(0, 0, 0, 0.2)'),
+      spacing: (factor) => `${8 * factor}px`,
     }),
     styled: () => props => props.children || null,
     GlobalStyles: () => null,
@@ -125,11 +134,15 @@ vi.mock('@mui/material', () => {
       multiline,
       rows,
       InputProps = {},
+      id,
       ...props
     }) => {
       const { sx, variant, fullWidth, size, ...htmlProps } = props;
+      // Generate an id if not provided to associate with label
+      const fieldId = id || `textfield-${Math.random().toString(36).substr(2, 9)}`;
       const inputProps = {
         ...htmlProps,
+        id: fieldId,
         value,
         onChange: onChange ? e => onChange(e) : undefined,
         rows: multiline ? rows : undefined,
@@ -142,7 +155,7 @@ vi.mock('@mui/material', () => {
       return React.createElement(
         'div',
         null,
-        label && React.createElement('label', null, label),
+        label && React.createElement('label', { htmlFor: fieldId }, label),
         input,
         helperText && React.createElement('span', null, helperText),
       );
@@ -169,10 +182,15 @@ vi.mock('@mui/material', () => {
       React.createElement('label', props, control, label),
     FormGroup: ({ children, ...props }) => React.createElement('div', props, children),
 
-    // Button components
+    // Button components - don't render icon elements, just render children text
     Button: ({ children, startIcon, endIcon, ...props }) => {
       const { sx, variant, color, size, fullWidth, disableElevation, ...htmlProps } = props;
-      return React.createElement('button', htmlProps, startIcon, children, endIcon);
+      // Filter children to only include text content, not icon elements
+      const filteredChildren = React.Children.toArray(children).filter(child => {
+        // Keep strings and numbers, skip React elements (which are icons)
+        return typeof child === 'string' || typeof child === 'number';
+      });
+      return React.createElement('button', htmlProps, filteredChildren);
     },
     IconButton: ({ children, ...props }) => {
       const { sx, color, size, edge, ...htmlProps } = props;
@@ -364,9 +382,14 @@ vi.mock('@mui/material', () => {
   };
 });
 
-// Mock Material UI icons
+// Mock Material UI icons - return a span that doesn't clutter text but is identifiable
 vi.mock('@mui/icons-material', () => {
-  const createIcon = name => () => name;
+  // Create icon mock that returns a span without text content
+  const createIcon = name => (props) => React.createElement('span', {
+    'data-icon': name,
+    ...props,
+    sx: undefined // Remove sx prop since it's MUI-specific
+  });
 
   return {
     Add: createIcon('AddIcon'),
@@ -379,6 +402,7 @@ vi.mock('@mui/icons-material', () => {
     StarBorder: createIcon('StarBorderIcon'),
     Check: createIcon('CheckIcon'),
     Clear: createIcon('ClearIcon'),
+    Notes: createIcon('NotesIcon'),
     LightMode: createIcon('LightModeIcon'),
     DarkMode: createIcon('DarkModeIcon'),
     Tag: createIcon('TagIcon'),
@@ -404,7 +428,6 @@ vi.mock('@mui/icons-material', () => {
     Terminal: createIcon('TerminalIcon'),
     // Additional icons for custom icon functionality
     CloudUpload: createIcon('CloudUploadIcon'),
-    Delete: createIcon('DeleteIcon'),
     Image: createIcon('ImageIcon'),
     Storage: createIcon('StorageIcon'),
     Api: createIcon('ApiIcon'),
