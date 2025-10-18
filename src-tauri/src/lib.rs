@@ -1224,6 +1224,7 @@ mod tests {
                 last_used TEXT,
                 background_color TEXT,
                 icon TEXT,
+                icon_size INTEGER,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 continue_flag BOOLEAN NOT NULL DEFAULT 0
             )",
@@ -1268,6 +1269,7 @@ mod tests {
             last_used: Some("2024-01-01T00:00:00Z".to_string()),
             background_color: Some("#ff5722".to_string()),
             icon: Some("Code".to_string()),
+            icon_size: Some(32),
             continue_flag: false,
         };
         
@@ -1350,6 +1352,7 @@ mod tests {
             pinned: Some(true),
             background_color: Some("#2196f3".to_string()),
             icon: Some("Terminal".to_string()),
+            icon_size: None,
             continue_flag: None,
         };
         
@@ -1453,6 +1456,7 @@ mod tests {
             pinned: Some(true),
             background_color: None,
             icon: None,
+            icon_size: None,
             continue_flag: None,
         };
         db.update_project(project2.id, updates).unwrap();
@@ -1476,6 +1480,7 @@ mod tests {
             pinned: None,
             background_color: None,
             icon: None,
+            icon_size: None,
             continue_flag: None,
         };
         let updated = db.update_project(project.id.clone(), updates).unwrap();

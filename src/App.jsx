@@ -71,6 +71,11 @@ const matchSorter = (items, searchText, options) => {
 
 // Project sorting function
 const sortProjects = (projects, sortBy) => {
+  // Handle undefined/null projects
+  if (!projects || !Array.isArray(projects)) {
+    return [];
+  }
+
   switch (sortBy) {
     case 'name':
       return [...projects].sort((a, b) => a.name.localeCompare(b.name));

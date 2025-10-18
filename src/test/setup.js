@@ -61,23 +61,58 @@ vi.mock('@mui/material', () => {
     GlobalStyles: () => null,
     CssBaseline: () => null,
 
-    // Basic components - render children
-    Box: ({ children, ...props }) => React.createElement('div', props, children),
-    Container: ({ children, ...props }) => React.createElement('div', props, children),
-    Stack: ({ children, ...props }) => React.createElement('div', props, children),
-    Grid: ({ children, ...props }) => React.createElement('div', props, children),
-    Paper: ({ children, ...props }) => React.createElement('div', props, children),
-    Card: ({ children, ...props }) => React.createElement('div', props, children),
-    CardContent: ({ children, ...props }) => React.createElement('div', props, children),
-    CardActions: ({ children, ...props }) => React.createElement('div', props, children),
-    CardActionArea: ({ children, ...props }) => React.createElement('div', props, children),
-    Divider: props => React.createElement('hr', props),
-    Backdrop: ({ children, ...props }) => React.createElement('div', props, children),
+    // Basic components - render children (with forwardRef support)
+    Box: React.forwardRef(({ children, component, ...props }, ref) => {
+      // Filter out MUI-specific props that aren't valid HTML attributes
+      const { sx, alignItems, justifyContent, flexDirection, gap, display, ...htmlProps } = props;
+      return React.createElement(component || 'div', { ref, ...htmlProps }, children);
+    }),
+    Container: React.forwardRef(({ children, maxWidth, ...props }, ref) => {
+      const { sx, ...htmlProps } = props;
+      return React.createElement('div', { ref, ...htmlProps }, children);
+    }),
+    Stack: ({ children, ...props }) => {
+      const { sx, spacing, direction, divider, ...htmlProps } = props;
+      return React.createElement('div', htmlProps, children);
+    },
+    Grid: ({ children, ...props }) => {
+      const { sx, container, item, xs, sm, md, lg, xl, spacing, ...htmlProps } = props;
+      return React.createElement('div', htmlProps, children);
+    },
+    Paper: ({ children, elevation, ...props }) => {
+      const { sx, ...htmlProps } = props;
+      return React.createElement('div', htmlProps, children);
+    },
+    Card: ({ children, ...props }) => {
+      const { sx, ...htmlProps } = props;
+      return React.createElement('div', htmlProps, children);
+    },
+    CardContent: ({ children, ...props }) => {
+      const { sx, ...htmlProps } = props;
+      return React.createElement('div', htmlProps, children);
+    },
+    CardActions: ({ children, ...props }) => {
+      const { sx, ...htmlProps } = props;
+      return React.createElement('div', htmlProps, children);
+    },
+    CardActionArea: ({ children, ...props }) => {
+      const { sx, ...htmlProps } = props;
+      return React.createElement('div', htmlProps, children);
+    },
+    Divider: props => {
+      const { sx, ...htmlProps } = props;
+      return React.createElement('hr', htmlProps);
+    },
+    Backdrop: ({ children, ...props }) => {
+      const { sx, open, ...htmlProps } = props;
+      return React.createElement('div', htmlProps, children);
+    },
 
     // Text components - render children
     Typography: ({ variant, component, children, ...props }) => {
+      const { sx, color, align, gutterBottom, noWrap, ...htmlProps } = props;
       const tag = component || (variant && variant.startsWith('h') ? variant : 'p');
-      return React.createElement(tag, props, children);
+      return React.createElement(tag, htmlProps, children);
     },
 
     // Form components
@@ -92,8 +127,9 @@ vi.mock('@mui/material', () => {
       InputProps = {},
       ...props
     }) => {
+      const { sx, variant, fullWidth, size, ...htmlProps } = props;
       const inputProps = {
-        ...props,
+        ...htmlProps,
         value,
         onChange: onChange ? e => onChange(e) : undefined,
         rows: multiline ? rows : undefined,
@@ -111,12 +147,14 @@ vi.mock('@mui/material', () => {
         helperText && React.createElement('span', null, helperText),
       );
     },
-    Select: ({ children, value, onChange, ...props }) =>
-      React.createElement(
+    Select: ({ children, value, onChange, ...props }) => {
+      const { sx, startAdornment, endAdornment, variant, fullWidth, size, ...htmlProps } = props;
+      return React.createElement(
         'select',
-        { ...props, value, onChange: onChange ? e => onChange(e) : undefined },
+        { ...htmlProps, value, onChange: onChange ? e => onChange(e) : undefined },
         children,
-      ),
+      );
+    },
     MenuItem: ({ children, value, ...props }) =>
       React.createElement('option', { ...props, value }, children),
     FormControl: ({ children, ...props }) => React.createElement('div', props, children),
@@ -132,13 +170,30 @@ vi.mock('@mui/material', () => {
     FormGroup: ({ children, ...props }) => React.createElement('div', props, children),
 
     // Button components
-    Button: ({ children, startIcon, endIcon, ...props }) =>
-      React.createElement('button', props, startIcon, children, endIcon),
-    IconButton: ({ children, ...props }) => React.createElement('button', props, children),
-    ButtonGroup: ({ children, ...props }) => React.createElement('div', props, children),
-    ToggleButton: ({ children, ...props }) => React.createElement('button', props, children),
-    ToggleButtonGroup: ({ children, ...props }) => React.createElement('div', props, children),
-    Fab: ({ children, ...props }) => React.createElement('button', props, children),
+    Button: ({ children, startIcon, endIcon, ...props }) => {
+      const { sx, variant, color, size, fullWidth, disableElevation, ...htmlProps } = props;
+      return React.createElement('button', htmlProps, startIcon, children, endIcon);
+    },
+    IconButton: ({ children, ...props }) => {
+      const { sx, color, size, edge, ...htmlProps } = props;
+      return React.createElement('button', htmlProps, children);
+    },
+    ButtonGroup: ({ children, ...props }) => {
+      const { sx, variant, color, size, orientation, ...htmlProps } = props;
+      return React.createElement('div', htmlProps, children);
+    },
+    ToggleButton: ({ children, ...props }) => {
+      const { sx, value, selected, ...htmlProps } = props;
+      return React.createElement('button', htmlProps, children);
+    },
+    ToggleButtonGroup: ({ children, ...props }) => {
+      const { sx, value, exclusive, onChange, ...htmlProps } = props;
+      return React.createElement('div', htmlProps, children);
+    },
+    Fab: ({ children, ...props }) => {
+      const { sx, variant, color, size, ...htmlProps } = props;
+      return React.createElement('button', htmlProps, children);
+    },
 
     // Navigation components
     AppBar: ({ children, ...props }) => React.createElement('header', props, children),
@@ -224,19 +279,33 @@ vi.mock('@mui/material', () => {
               ),
           )
         : null,
-    Dialog: ({ open, children, onClose, ...props }) =>
-      open
+    Dialog: ({ open, children, onClose, ...props }) => {
+      const { sx, maxWidth, fullWidth, fullScreen, ...htmlProps } = props;
+      return open
         ? React.createElement(
             'div',
-            { role: 'dialog', ...props },
+            { role: 'dialog', ...htmlProps },
             onClose && React.createElement('button', { onClick: onClose }, '×'),
             children,
           )
-        : null,
-    DialogTitle: ({ children, ...props }) => React.createElement('h2', props, children),
-    DialogContent: ({ children, ...props }) => React.createElement('div', props, children),
-    DialogContentText: ({ children, ...props }) => React.createElement('p', props, children),
-    DialogActions: ({ children, ...props }) => React.createElement('div', props, children),
+        : null;
+    },
+    DialogTitle: ({ children, ...props }) => {
+      const { sx, ...htmlProps } = props;
+      return React.createElement('h2', htmlProps, children);
+    },
+    DialogContent: ({ children, ...props }) => {
+      const { sx, dividers, ...htmlProps } = props;
+      return React.createElement('div', htmlProps, children);
+    },
+    DialogContentText: ({ children, ...props }) => {
+      const { sx, ...htmlProps } = props;
+      return React.createElement('p', htmlProps, children);
+    },
+    DialogActions: ({ children, ...props }) => {
+      const { sx, ...htmlProps } = props;
+      return React.createElement('div', htmlProps, children);
+    },
 
     // Data display components
     Table: ({ children, ...props }) => React.createElement('table', props, children),
