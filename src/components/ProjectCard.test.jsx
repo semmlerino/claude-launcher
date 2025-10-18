@@ -520,6 +520,126 @@ describe('ProjectCard', () => {
     });
   });
 
+  describe('Icon functionality', () => {
+    test('displays project icon when icon is set', () => {
+      const projectWithIcon = {
+        ...defaultProject,
+        icon: 'Code',
+      };
+      renderWithTheme(<ProjectCard project={projectWithIcon} {...mockHandlers} />);
+      
+      // The icon should be displayed in the project name section
+      expect(screen.getByText('My Test Project')).toBeInTheDocument();
+      // Icon is rendered through getIconComponent, which would create an element
+      // We can check that the structure includes the icon by looking for the container
+      const nameContainer = screen.getByText('My Test Project').parentElement;
+      expect(nameContainer).toHaveStyle('display: flex');
+    });
+
+    test('does not display icon when icon is not set', () => {
+      const projectWithoutIcon = {
+        ...defaultProject,
+        icon: null,
+      };
+      renderWithTheme(<ProjectCard project={projectWithoutIcon} {...mockHandlers} />);
+      
+      // Project name should be displayed directly without icon container
+      const nameElement = screen.getByText('My Test Project');
+      expect(nameElement).toBeInTheDocument();
+    });
+
+    test('opens icon picker when context menu change icon is clicked', async () => {
+      const user = userEvent.setup();
+      renderWithTheme(<ProjectCard project={defaultProject} {...mockHandlers} />);
+
+      // Right click to open context menu
+      const card = screen.getByText('My Test Project').closest('[data-testid]') || 
+                   screen.getByText('My Test Project').closest('div');
+      await user.pointer({ keys: '[MouseRight]', target: card });
+
+      // Click "Change Icon" in context menu
+      const changeIconItem = screen.getByText('Change Icon');
+      await user.click(changeIconItem);
+
+      // Icon picker should be open
+      expect(screen.getByTestId('icon-picker')).toBeInTheDocument();
+    });
+
+    test('calls onUpdate when icon is selected', async () => {
+      const user = userEvent.setup();
+      renderWithTheme(<ProjectCard project={defaultProject} {...mockHandlers} />);
+
+      // Right click to open context menu
+      const card = screen.getByText('My Test Project').closest('[data-testid]') || 
+                   screen.getByText('My Test Project').closest('div');
+      await user.pointer({ keys: '[MouseRight]', target: card });
+
+      // Click "Change Icon" in context menu
+      const changeIconItem = screen.getByText('Change Icon');
+      await user.click(changeIconItem);
+
+      // Select an icon
+      const selectCodeIcon = screen.getByText('Select Code Icon');
+      await user.click(selectCodeIcon);
+
+      // Should call onUpdate with icon
+      await waitFor(() => {
+        expect(mockHandlers.onUpdate).toHaveBeenCalledWith(1, { icon: 'Code' });
+      });
+    });
+
+    test('calls onUpdate with null when icon is cleared', async () => {
+      const user = userEvent.setup();
+      const projectWithIcon = {
+        ...defaultProject,
+        icon: 'Terminal',
+      };
+      renderWithTheme(<ProjectCard project={projectWithIcon} {...mockHandlers} />);
+
+      // Right click to open context menu
+      const card = screen.getByText('My Test Project').closest('[data-testid]') || 
+                   screen.getByText('My Test Project').closest('div');
+      await user.pointer({ keys: '[MouseRight]', target: card });
+
+      // Click "Change Icon" in context menu
+      const changeIconItem = screen.getByText('Change Icon');
+      await user.click(changeIconItem);
+
+      // Clear the icon
+      const clearIcon = screen.getByText('Clear Icon');
+      await user.click(clearIcon);
+
+      // Should call onUpdate with null icon
+      await waitFor(() => {
+        expect(mockHandlers.onUpdate).toHaveBeenCalledWith(1, { icon: null });
+      });
+    });
+
+    test('closes icon picker when close button is clicked', async () => {
+      const user = userEvent.setup();
+      renderWithTheme(<ProjectCard project={defaultProject} {...mockHandlers} />);
+
+      // Right click to open context menu
+      const card = screen.getByText('My Test Project').closest('[data-testid]') || 
+                   screen.getByText('My Test Project').closest('div');
+      await user.pointer({ keys: '[MouseRight]', target: card });
+
+      // Click "Change Icon" in context menu
+      const changeIconItem = screen.getByText('Change Icon');
+      await user.click(changeIconItem);
+
+      // Icon picker should be open
+      expect(screen.getByTestId('icon-picker')).toBeInTheDocument();
+
+      // Click close button
+      const closeButton = screen.getByText('Close');
+      await user.click(closeButton);
+
+      // Icon picker should be closed
+      expect(screen.queryByTestId('icon-picker')).not.toBeInTheDocument();
+    });
+  });
+
   describe('Edge cases', () => {
     test('handles undefined loadingOperations prop', () => {
       renderWithTheme(

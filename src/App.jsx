@@ -102,7 +102,6 @@ function App() {
   const [dragOver, setDragOver] = useState(false);
   // selectedProjectIndex removed - keyboard navigation not needed
   const [sortOption, setSortOption] = useState('recent');
-  const [globalContextMenu, setGlobalContextMenu] = useState(null);
   const [loadingOperations, setLoadingOperations] = useState({
     add: false,
     launch: null, // stores projectId when launching
@@ -559,19 +558,6 @@ function App() {
     }
   }, [showSnackbar]);
 
-  // Global context menu handlers
-  const handleGlobalContextMenu = useCallback(event => {
-    event.preventDefault();
-    setGlobalContextMenu({
-      mouseX: event.clientX,
-      mouseY: event.clientY,
-    });
-  }, []);
-
-  const handleCloseGlobalContextMenu = useCallback(() => {
-    setGlobalContextMenu(null);
-  }, []);
-
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
@@ -584,7 +570,6 @@ function App() {
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
-        onContextMenu={handleGlobalContextMenu}
         ref={dropZoneRef}
       >
         {/* App Bar */}
@@ -840,30 +825,6 @@ function App() {
             {snackbar.message}
           </Alert>
         </Snackbar>
-
-        {/* Global Context Menu */}
-        <Menu
-          open={Boolean(globalContextMenu)}
-          onClose={handleCloseGlobalContextMenu}
-          anchorReference="anchorPosition"
-          anchorPosition={
-            globalContextMenu
-              ? { top: globalContextMenu.mouseY, left: globalContextMenu.mouseX }
-              : undefined
-          }
-        >
-          <MenuItem
-            onClick={() => {
-              handleCloseWindow();
-              handleCloseGlobalContextMenu();
-            }}
-          >
-            <ListItemIcon>
-              <CloseIcon fontSize="small" />
-            </ListItemIcon>
-            <ListItemText>Close</ListItemText>
-          </MenuItem>
-        </Menu>
       </Box>
     </ThemeProvider>
   );

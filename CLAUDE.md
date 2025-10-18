@@ -39,12 +39,14 @@ npm run tauri build
 # Run frontend tests
 npm test                  # Run all tests in watch mode
 npm test -- --run        # Run all tests once
+npm test -- ProjectCard  # Run tests matching "ProjectCard"
 npm test:ui              # Run tests with UI
 npm test:coverage        # Run tests with coverage
 
 # Run backend tests (requires Rust in PATH)
 export PATH="$HOME/.cargo/bin:$PATH" && npm run test:rust
 # Or directly: cargo test
+# Run specific Rust test: cargo test test_name
 
 # Run linting and formatting
 npm run lint             # Run ESLint
@@ -101,8 +103,13 @@ This is a **Tauri 2.0 desktop application** that combines:
 - Settings persistence infrastructure
 
 **Database Schema**:
-- `projects` table: id, path, name, tags, notes, pinned, last_used, color (optional)
+- `projects` table: id, path, name, tags, notes, pinned, last_used, background_color, icon, icon_size, continue_flag
 - `settings` table: key-value pairs for user preferences
+
+**Performance Optimization**:
+- LRU cache for settings (100 entries) - reduces database reads
+- In-memory project cache with invalidation on updates
+- Thread-safe database access using `parking_lot::Mutex`
 
 ## Development Patterns
 
@@ -117,6 +124,10 @@ set_setting(key: String, value: String)
 Known setting keys:
 - `theme_preference`: 'light' | 'dark'
 - `sort_preference`: 'name' | 'recent'
+- `use_wsl`: 'true' | 'false' - Enable WSL integration (Windows only)
+- `claude_executable_path`: Path to claude executable in WSL
+- `keep_terminal_open`: 'true' | 'false' - Keep terminal window open after launch
+- `wsl_launch_method`: 'batch' | 'wt' | 'powershell' - How to launch WSL commands
 
 ### State Management
 - React state for UI interactions
@@ -124,12 +135,15 @@ Known setting keys:
 - Settings loaded on app initialization, saved immediately on changes
 
 ### Component Architecture
-- `App.jsx` - Main container with global state
-- `ProjectGrid.jsx` - Layout and organization logic
-- `ProjectCard.jsx` - Individual project display and actions
-- `ColorPicker.jsx` - Color selection component
+- `App.jsx` - Main container with global state, theme, settings, project data
+- `ProjectGrid.jsx` - Layout and organization logic using MUI Masonry
+- `ProjectCard.jsx` - Individual project display and actions, keyboard navigation
+- `ColorPicker.jsx` - Custom color selection component
+- `IconPicker.jsx` - Icon selection from Material UI icon set
+- `IconRenderer.jsx` - Displays project icons with size variants
+- `CustomIconUpload.jsx` - Upload custom SVG/PNG icons (if implemented)
 - `ContextMenu.jsx` - Right-click menu functionality
-- `ErrorBoundary.jsx` - Error handling wrapper
+- `ErrorBoundary.jsx` - Error handling wrapper for React errors
 
 ### Feature Implementation Pattern
 1. Add React state variables
@@ -158,7 +172,9 @@ All database operations happen in Rust backend through Tauri commands:
 - Drag & drop folder support
 - Search, tag filtering, sorting (Name A-Z, Recently Used)
 - Pin favorites, recent projects tracking
-- Color-coding for projects
+- Color-coding for projects with custom background colors
+- Custom icons with configurable sizes
+- Continue flag per project (launches with `--continue`)
 - Context menu actions (Open Folder)
 
 **UI Features**:
@@ -180,11 +196,24 @@ The project has comprehensive tests using:
 - **Backend**: Rust's built-in test framework with in-memory SQLite
 - **Integration**: Tauri mockIPC for frontend-backend testing
 
-Key testing principles:
+### Test Configuration
+- **Test timeout**: 30 seconds per test (configured for slower operations)
+- **Hook timeout**: 10 seconds
+- **Environment**: happy-dom (faster than jsdom, sufficient for this app)
+- **Setup file**: `src/test/setup.js` - Contains all mocks and polyfills
+
+### Key Testing Principles
 - Use semantic queries (getByRole, getByLabelText) over implementation details
 - Wrap async operations in act() when needed
 - Use within() for component-scoped queries when multiple elements exist
 - Match implementation exactly (check actual code before writing tests)
+- All MUI components and icons are mocked in setup.js to prevent test hanging
+- Tauri APIs are fully mocked via vitest
+
+### Mock Structure
+- **MUI mocks**: Comprehensive mocks in setup.js render semantic HTML equivalents
+- **Tauri mocks**: All plugins mocked with vi.fn() for easy assertion
+- **Icon mocks**: Material icons return their name as string for testing
 
 ## Known Build Issues
 

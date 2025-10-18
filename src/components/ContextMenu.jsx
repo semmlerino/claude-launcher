@@ -1,6 +1,6 @@
 import React from 'react';
 import { Menu, MenuItem, ListItemIcon, ListItemText, Divider } from '@mui/material';
-import { Edit, Palette, Delete, FolderOpen } from '@mui/icons-material';
+import { Edit, Palette, Apps, Delete, FolderOpen } from '@mui/icons-material';
 
 const ContextMenu = ({
   anchorPosition,
@@ -8,6 +8,7 @@ const ContextMenu = ({
   onClose,
   onRename,
   onChangeColor,
+  onChangeIcon,
   onOpenFolder,
   onDelete,
 }) => {
@@ -47,6 +48,17 @@ const ContextMenu = ({
           <Palette fontSize="small" />
         </ListItemIcon>
         <ListItemText>Change Color</ListItemText>
+      </MenuItem>
+      <MenuItem
+        onClick={() => {
+          onChangeIcon();
+          onClose();
+        }}
+      >
+        <ListItemIcon>
+          <Apps fontSize="small" />
+        </ListItemIcon>
+        <ListItemText>Change Icon</ListItemText>
       </MenuItem>
       <MenuItem
         onClick={() => {
