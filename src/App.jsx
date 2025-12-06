@@ -107,7 +107,6 @@ function App() {
   const [projects, setProjects] = useState([]);
   const [recentProjects, setRecentProjects] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [activeTags, setActiveTags] = useState([]);
   const [loading, setLoading] = useState(true);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' });
@@ -438,15 +437,6 @@ function App() {
     };
   }, [addProjectByPath]);
 
-  // Debounce search query
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearchQuery(searchQuery);
-    }, 300);
-
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
-
   // Memoize filtered and sorted projects
   const filteredAndSortedProjects = useMemo(() => {
     let filtered = projects;
@@ -457,8 +447,8 @@ function App() {
     }
 
     // Apply search filter
-    if (debouncedSearchQuery) {
-      filtered = matchSorter(filtered, debouncedSearchQuery, {
+    if (searchQuery) {
+      filtered = matchSorter(filtered, searchQuery, {
         keys: ['name', 'tags', 'notes', 'path'],
       });
     }
@@ -467,7 +457,7 @@ function App() {
     filtered = sortProjects(filtered, sortOption);
 
     return filtered;
-  }, [debouncedSearchQuery, projects, activeTags, sortOption]);
+  }, [searchQuery, projects, activeTags, sortOption]);
 
   // Memoize all unique tags from projects
   const allTags = useMemo(() => {
