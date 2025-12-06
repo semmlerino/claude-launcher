@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import {
   Card,
@@ -58,23 +58,40 @@ const ProjectCard = React.memo(
     const [contextMenu, setContextMenu] = useState(null);
     const [colorPickerOpen, setColorPickerOpen] = useState(false);
     const [iconPickerOpen, setIconPickerOpen] = useState(false);
+    const renameInputRef = useRef(null);
+
+    const [saveError, setSaveError] = useState(null);
 
     const handleSaveEdit = async () => {
-      await onUpdate(project.id, {
-        name: editedName,
-        tags: editedTags
-          .split(',')
-          .map(tag => tag.trim())
-          .filter(tag => tag),
-        notes: editedNotes,
-      });
-      setIsEditing(false);
+      // Validate name is not empty
+      const trimmedName = editedName.trim();
+      if (!trimmedName) {
+        setSaveError('Project name cannot be empty');
+        return;
+      }
+
+      setSaveError(null);
+      try {
+        await onUpdate(project.id, {
+          name: trimmedName,
+          tags: editedTags
+            .split(',')
+            .map(tag => tag.trim())
+            .filter(tag => tag),
+          notes: editedNotes,
+        });
+        setIsEditing(false);
+      } catch (error) {
+        setSaveError(`Failed to save: ${error}`);
+        // Keep edit mode open so user can retry or cancel
+      }
     };
 
     const handleCancelEdit = () => {
       setEditedName(project.name);
       setEditedTags(project.tags.join(', '));
       setEditedNotes(project.notes);
+      setSaveError(null);
       setIsEditing(false);
     };
 
@@ -126,8 +143,8 @@ const ProjectCard = React.memo(
     const handleOpenFolder = async () => {
       try {
         await invoke('open_project_folder', { id: project.id });
-      } catch (error) {
-        console.error('Failed to open project folder:', error);
+      } catch (_error) {
+        // Silently fail for folder open - user will see the folder didn't open
       }
     };
 
@@ -141,14 +158,11 @@ const ProjectCard = React.memo(
 
     // Auto-focus and select text when entering rename mode
     useEffect(() => {
-      if (isRenaming) {
-        const input = document.getElementById(`rename-input-${project.id}`);
-        if (input) {
-          input.focus();
-          input.select();
-        }
+      if (isRenaming && renameInputRef.current) {
+        renameInputRef.current.focus();
+        renameInputRef.current.select();
       }
-    }, [isRenaming, project.id]);
+    }, [isRenaming]);
 
     // Memoize truncated notes to avoid recalculation on every render
     const truncatedNotes = useMemo(() => {
@@ -199,17 +213,21 @@ const ProjectCard = React.memo(
         <CardContent sx={{ flexGrow: 1, pt: 3 }}>
           {/* Project Name */}
           {isEditing ? (
-            <TextField
-              fullWidth
-              variant="standard"
-              value={editedName}
-              onChange={e => setEditedName(e.target.value)}
-              autoFocus
-              sx={{ mb: 2 }}
-            />
+            <>
+              <TextField
+                fullWidth
+                variant="standard"
+                value={editedName}
+                onChange={e => setEditedName(e.target.value)}
+                autoFocus
+                error={!!saveError}
+                helperText={saveError}
+                sx={{ mb: 2 }}
+              />
+            </>
           ) : isRenaming ? (
             <TextField
-              id={`rename-input-${project.id}`}
+              inputRef={renameInputRef}
               fullWidth
               variant="standard"
               value={renameValue}
@@ -253,9 +271,9 @@ const ProjectCard = React.memo(
               />
             ) : (
               <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
-                {project.tags.map((tag, index) => (
+                {project.tags.map(tag => (
                   <Chip
-                    key={index}
+                    key={`tag-${tag}`}
                     label={tag}
                     size="small"
                     color="primary"

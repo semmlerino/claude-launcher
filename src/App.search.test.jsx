@@ -1,6 +1,6 @@
 import React from 'react';
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor, act } from '@testing-library/react';
+import { screen, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { mockIPC, clearMocks } from '@tauri-apps/api/mocks';
 import { renderWithTheme, createMockProject } from './test/testUtils.jsx';
@@ -78,7 +78,7 @@ describe('App Search Tests - Debug', () => {
     vi.useFakeTimers();
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
 
-    const { container } = renderWithTheme(<App />);
+    renderWithTheme(<App />);
 
     // Wait for initial render with real timers temporarily
     vi.useRealTimers();

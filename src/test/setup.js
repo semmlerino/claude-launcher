@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom';
-import { afterEach, vi } from 'vitest';
+import { afterEach, beforeEach, vi } from 'vitest';
 import { cleanup } from '@testing-library/react';
 import { randomFillSync } from 'crypto';
 import * as React from 'react';
@@ -27,8 +27,6 @@ vi.mock('@mui/lab', () => ({
 
 // Mock Material UI components that cause hanging but keep semantic behavior
 vi.mock('@mui/material', () => {
-  const originalModule = {};
-
   return {
     // Theme providers - essential for context
     ThemeProvider: ({ children }) => children,
@@ -185,6 +183,8 @@ vi.mock('@mui/material', () => {
     InputAdornment: ({ children, ...props }) => React.createElement('span', props, children),
     OutlinedInput: props => React.createElement('input', props),
     Checkbox: props => React.createElement('input', { ...props, type: 'checkbox' }),
+    Switch: ({ checked, onChange, ...props }) =>
+      React.createElement('input', { ...props, type: 'checkbox', checked, onChange }),
     FormControlLabel: ({ control, label, ...props }) =>
       React.createElement('label', props, control, label),
     FormGroup: ({ children, ...props }) => React.createElement('div', props, children),
@@ -272,13 +272,13 @@ vi.mock('@mui/material', () => {
         children,
         badgeContent && React.createElement('span', null, badgeContent),
       ),
-    Tooltip: ({ children, title, ...props }) => children,
+    Tooltip: ({ children, _title, ..._props }) => children,
     LinearProgress: props => React.createElement('div', { role: 'progressbar', ...props }),
     CircularProgress: props => React.createElement('div', { role: 'progressbar', ...props }),
     Skeleton: props => React.createElement('div', props),
 
     // Feedback components
-    Alert: ({ children, severity, onClose, action, ...props }) =>
+    Alert: ({ children, _severity, onClose, action, ...props }) =>
       React.createElement(
         'div',
         { role: 'alert', ...props },
@@ -382,7 +382,7 @@ vi.mock('@mui/material', () => {
     PaginationItem: props => React.createElement('button', props),
     Autocomplete: ({ renderInput, options, ...props }) =>
       React.createElement('div', null, renderInput({ inputProps: props })),
-    ClickAwayListener: ({ children, onClickAway }) => children,
+    ClickAwayListener: ({ children, _onClickAway }) => children,
     Modal: ({ children, open, ...props }) =>
       open ? React.createElement('div', props, children) : null,
     SwipeableDrawer: ({ children, open, ...props }) =>
@@ -398,7 +398,7 @@ vi.mock('@mui/icons-material', () => {
   const createIcon = name => (props) => React.createElement('span', {
     'data-icon': name,
     ...props,
-    sx: undefined // Remove sx prop since it's MUI-specific
+    sx: undefined, // Remove sx prop since it's MUI-specific
   });
 
   return {
@@ -455,6 +455,8 @@ vi.mock('@mui/icons-material', () => {
     Analytics: createIcon('AnalyticsIcon'),
     Build: createIcon('BuildIcon'),
     Settings: createIcon('SettingsIcon'),
+    FileDownload: createIcon('FileDownloadIcon'),
+    FileUpload: createIcon('FileUploadIcon'),
     Engineering: createIcon('EngineeringIcon'),
     Construction: createIcon('ConstructionIcon'),
     Handyman: createIcon('HandymanIcon'),

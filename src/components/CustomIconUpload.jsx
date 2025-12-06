@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -38,9 +38,9 @@ const CustomIconUpload = ({ open: isOpen, onClose, onIconUploaded }) => {
         filters: [
           {
             name: 'Image Files',
-            extensions: ['svg', 'png', 'jpg', 'jpeg', 'ico', 'webp']
-          }
-        ]
+            extensions: ['svg', 'png', 'jpg', 'jpeg', 'ico', 'webp'],
+          },
+        ],
       });
 
       if (selected) {
@@ -70,7 +70,7 @@ const CustomIconUpload = ({ open: isOpen, onClose, onIconUploaded }) => {
     try {
       const result = await invoke('upload_custom_icon', {
         sourcePath: selectedFile,
-        desiredName: desiredName.trim() || null
+        desiredName: desiredName.trim() || null,
       });
 
       if (result.success) {
@@ -175,7 +175,7 @@ const CustomIconUpload = ({ open: isOpen, onClose, onIconUploaded }) => {
                   borderColor: 'divider',
                   borderRadius: 1,
                   p: 1,
-                  bgcolor: 'background.paper'
+                  bgcolor: 'background.paper',
                 }}
                 onError={() => setPreview(null)}
               />

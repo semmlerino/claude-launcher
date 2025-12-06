@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -80,6 +80,14 @@ const COLOR_PRESETS = {
 const ColorPicker = ({ open, onClose, onColorSelect, currentColor }) => {
   const [customColor, setCustomColor] = useState('');
   const [selectedColor, setSelectedColor] = useState(currentColor || '');
+
+  // Sync state with props when dialog opens or currentColor changes
+  useEffect(() => {
+    if (open) {
+      setSelectedColor(currentColor || '');
+      setCustomColor('');
+    }
+  }, [open, currentColor]);
 
   const handleColorClick = color => {
     setSelectedColor(color);

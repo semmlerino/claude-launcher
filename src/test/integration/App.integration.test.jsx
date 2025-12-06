@@ -120,7 +120,7 @@ describe('App Integration Tests', () => {
   describe('Project Management', () => {
     beforeEach(() => {
       // Setup default mocks
-      mockIPC((cmd, args) => {
+      mockIPC((cmd, _args) => {
         switch (cmd) {
           case 'init_database':
             return { status: 'success' };
@@ -153,7 +153,7 @@ describe('App Integration Tests', () => {
         last_used: null,
       };
 
-      let projectsData = [...mockProjects];
+      const projectsData = [...mockProjects];
 
       render(<App />);
 
@@ -163,7 +163,7 @@ describe('App Integration Tests', () => {
       });
 
       // Now override the mock to handle add_project AFTER initial load
-      mockIPC((cmd, args) => {
+      mockIPC((cmd, _args) => {
         switch (cmd) {
           case 'init_database':
             return { status: 'success' };
@@ -252,7 +252,7 @@ describe('App Integration Tests', () => {
     });
 
     it('should update project properties (pin, notes, tags)', async () => {
-      let projectsData = [...mockProjects];
+      const projectsData = [...mockProjects];
 
       clearMocks();
       mockIPC((cmd, args) => {

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { open } from '@tauri-apps/plugin-dialog';
+import { open, save } from '@tauri-apps/plugin-dialog';
 import { info, error as logError, warn, debug } from '@tauri-apps/plugin-log';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
@@ -35,6 +35,7 @@ import {
   Menu,
   ListItemIcon,
   ListItemText,
+  Tooltip,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -45,8 +46,12 @@ import {
   Clear as ClearIcon,
   Sort as SortIcon,
   Close as CloseIcon,
+  Settings as SettingsIcon,
+  FileDownload as ExportIcon,
+  FileUpload as ImportIcon,
 } from '@mui/icons-material';
 import ProjectGrid from './components/ProjectGrid';
+import SettingsDialog from './components/SettingsDialog';
 import './App.css';
 
 // Simple fuzzy search implementation
@@ -97,7 +102,6 @@ function App() {
   const [darkMode, setDarkMode] = useState(prefersDarkMode);
   const [projects, setProjects] = useState([]);
   const [recentProjects, setRecentProjects] = useState([]);
-  const [filteredProjects, setFilteredProjects] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [activeTags, setActiveTags] = useState([]);
@@ -114,10 +118,12 @@ function App() {
     update: null, // stores projectId when updating
     pin: null, // stores projectId when pinning/unpinning
   });
-  const [isInitialized, setIsInitialized] = useState(false);
   const initializingRef = useRef(false);
   const dropZoneRef = useRef(null);
   const [globalContextMenu, setGlobalContextMenu] = useState(null);
+  const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
 
   // Create theme based on dark mode preference
   const theme = React.useMemo(
@@ -154,7 +160,7 @@ function App() {
       if (savedSort && (savedSort === 'name' || savedSort === 'recent')) {
         setSortOption(savedSort);
       }
-    } catch (error) {
+    } catch (_error) {
       // Use default if loading fails
       info('Using default sort preference');
     }
@@ -167,7 +173,7 @@ function App() {
       if (savedTheme === 'light' || savedTheme === 'dark') {
         setDarkMode(savedTheme === 'dark');
       }
-    } catch (error) {
+    } catch (_error) {
       // Use system preference if loading fails
       info('Using system theme preference');
     }
@@ -225,12 +231,85 @@ function App() {
     [loadProjects, showSnackbar],
   );
 
-  // Initialize the app
+  // Export projects to JSON file
+  const handleExportProjects = useCallback(async () => {
+    if (projects.length === 0) {
+      showSnackbar('No projects to export', 'warning');
+      return;
+    }
+
+    setIsExporting(true);
+    try {
+      const filePath = await save({
+        title: 'Export Projects',
+        defaultPath: `claude-launcher-projects-${new Date().toISOString().split('T')[0]}.json`,
+        filters: [{ name: 'JSON Files', extensions: ['json'] }],
+      });
+
+      if (filePath) {
+        const result = await invoke('export_projects', { filePath });
+        if (result.success) {
+          showSnackbar(`Exported ${result.count} projects successfully`, 'success');
+          info(`Exported ${result.count} projects to ${filePath}`);
+        }
+      }
+    } catch (error) {
+      logError(`Export failed: ${error}`);
+      showSnackbar(`Export failed: ${error}`, 'error');
+    } finally {
+      setIsExporting(false);
+    }
+  }, [projects.length, showSnackbar]);
+
+  // Import projects from JSON file
+  const handleImportProjects = useCallback(async () => {
+    setIsImporting(true);
+    try {
+      const filePath = await open({
+        title: 'Import Projects',
+        multiple: false,
+        filters: [{ name: 'JSON Files', extensions: ['json'] }],
+      });
+
+      if (filePath) {
+        const result = await invoke('import_projects', { filePath });
+
+        // Reload projects after import
+        await loadProjects();
+
+        // Build summary message
+        const messages = [];
+        if (result.imported > 0) messages.push(`${result.imported} imported`);
+        if (result.skipped > 0) messages.push(`${result.skipped} skipped (already exist)`);
+        if (result.failed > 0) messages.push(`${result.failed} failed`);
+
+        const summary = messages.join(', ');
+        const severity = result.failed > 0 ? 'warning' : 'success';
+
+        showSnackbar(`Import complete: ${summary}`, severity);
+        info(`Import result: ${JSON.stringify(result)}`);
+
+        // Log detailed errors if any
+        if (result.errors && result.errors.length > 0) {
+          result.errors.forEach(err => logError(err));
+        }
+      }
+    } catch (error) {
+      logError(`Import failed: ${error}`);
+      showSnackbar(`Import failed: ${error}`, 'error');
+    } finally {
+      setIsImporting(false);
+    }
+  }, [loadProjects, showSnackbar]);
+
+  // Initialize the app - runs only once on mount
   useEffect(() => {
+    let isCancelled = false;
+
     const init = async () => {
       // Prevent multiple simultaneous initializations
-      if (initializingRef.current || isInitialized) {
-        info('Initialization already in progress or completed, skipping...');
+      if (initializingRef.current) {
+        info('Initialization already in progress, skipping...');
         return;
       }
 
@@ -242,6 +321,7 @@ function App() {
 
         // Initialize database
         await invoke('init_database');
+        if (isCancelled) return;
 
         // Load all data in parallel
         await Promise.all([
@@ -251,48 +331,69 @@ function App() {
           checkClaudeInstalled(),
         ]);
 
-        setIsInitialized(true);
+        if (isCancelled) return;
+
         info('Application initialized successfully');
       } catch (error) {
+        if (isCancelled) return;
         logError(`Failed to initialize: ${error}`);
         showSnackbar(`Failed to initialize: ${error}`, 'error');
 
         // Reset initialization flag on error to allow retry
         initializingRef.current = false;
       } finally {
-        setLoading(false);
+        if (!isCancelled) {
+          setLoading(false);
+        }
       }
     };
 
     init();
-  }, [loadProjects, loadSortPreference, loadThemePreference, checkClaudeInstalled, showSnackbar]);
+
+    return () => {
+      isCancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Empty deps - init only on mount, functions are stable via useCallback
 
   // Set up file drop listener
   useEffect(() => {
     let unlisten;
+    let isMounted = true;
 
     const setupListener = async () => {
-      console.log('Setting up Tauri drag-drop listener...');
-      info('Setting up Tauri drag-drop listener...');
+      try {
+        debug('Setting up Tauri drag-drop listener...');
 
-      unlisten = await listen('tauri://drag-drop', async event => {
-        console.log('Tauri drag-drop event received!', event);
-        info('Tauri drag-drop event received', event);
-        const paths = event.payload.paths || [];
-        console.log('Dropped paths:', paths);
+        const listener = await listen('tauri://drag-drop', async event => {
+          if (!isMounted) return;
+          debug('Tauri drag-drop event received');
+          const paths = event.payload.paths || [];
 
-        for (const path of paths) {
-          await addProjectByPath(path);
+          for (const path of paths) {
+            await addProjectByPath(path);
+          }
+        });
+
+        // Only assign unlisten if component is still mounted
+        if (isMounted) {
+          unlisten = listener;
+          debug('Tauri drag-drop listener set up successfully');
+        } else {
+          // Component unmounted during setup, clean up immediately
+          listener();
         }
-      });
-
-      console.log('Tauri drag-drop listener set up successfully');
-      info('Tauri drag-drop listener set up successfully');
+      } catch (error) {
+        if (isMounted) {
+          logError(`Failed to setup drag-drop listener: ${error}`);
+        }
+      }
     };
 
     setupListener();
 
     return () => {
+      isMounted = false;
       if (unlisten) {
         unlisten();
       }
@@ -329,12 +430,6 @@ function App() {
 
     return filtered;
   }, [debouncedSearchQuery, projects, activeTags, sortOption]);
-
-  // Update filtered projects when memoized value changes
-  useEffect(() => {
-    setFilteredProjects(filteredAndSortedProjects);
-    // selectedProjectIndex reset removed - keyboard navigation not needed
-  }, [filteredAndSortedProjects]);
 
   // Memoize all unique tags from projects
   const allTags = useMemo(() => {
@@ -396,24 +491,21 @@ function App() {
 
   // Handle drag and drop
   const handleDragOver = e => {
-    console.log('HTML dragOver event fired');
-    info('HTML dragOver event fired');
+    debug('HTML dragOver event fired');
     e.preventDefault();
     e.stopPropagation();
     setDragOver(true);
   };
 
   const handleDragLeave = e => {
-    console.log('HTML dragLeave event fired');
-    info('HTML dragLeave event fired');
+    debug('HTML dragLeave event fired');
     e.preventDefault();
     e.stopPropagation();
     setDragOver(false);
   };
 
   const handleDrop = async e => {
-    console.log('HTML drop event fired', e);
-    info('HTML drop event fired');
+    debug('HTML drop event fired');
     e.preventDefault();
     e.stopPropagation();
     setDragOver(false);
@@ -507,11 +599,11 @@ function App() {
 
   const confirmDelete = useCallback(async () => {
     if (!deleteDialog.projectId) {
-      console.error('No project ID provided for deletion');
+      warn('No project ID provided for deletion');
       return;
     }
 
-    console.log('Deleting project with ID:', deleteDialog.projectId);
+    debug(`Deleting project with ID: ${deleteDialog.projectId}`);
     setLoadingOperations(prev => ({ ...prev, delete: deleteDialog.projectId }));
 
     try {
@@ -519,7 +611,7 @@ function App() {
       await loadProjects();
       showSnackbar('Project deleted', 'success');
     } catch (error) {
-      console.error('Delete project error:', error);
+      logError(`Delete project error: ${error}`);
       showSnackbar(`Failed to delete project: ${error}`, 'error');
     } finally {
       setLoadingOperations(prev => ({ ...prev, delete: null }));
@@ -659,6 +751,36 @@ function App() {
               <RefreshIcon />
             </IconButton>
 
+            {/* Export Button */}
+            <Tooltip title="Export projects to file">
+              <span>
+                <IconButton
+                  color="inherit"
+                  onClick={handleExportProjects}
+                  disabled={isExporting || projects.length === 0}
+                  aria-label="Export projects"
+                  sx={{ ml: 1 }}
+                >
+                  {isExporting ? <CircularProgress size={24} color="inherit" /> : <ExportIcon />}
+                </IconButton>
+              </span>
+            </Tooltip>
+
+            {/* Import Button */}
+            <Tooltip title="Import projects from file">
+              <span>
+                <IconButton
+                  color="inherit"
+                  onClick={handleImportProjects}
+                  disabled={isImporting}
+                  aria-label="Import projects"
+                  sx={{ ml: 1 }}
+                >
+                  {isImporting ? <CircularProgress size={24} color="inherit" /> : <ImportIcon />}
+                </IconButton>
+              </span>
+            </Tooltip>
+
             {/* Theme Toggle */}
             <IconButton
               color="inherit"
@@ -678,6 +800,16 @@ function App() {
               sx={{ ml: 1 }}
             >
               {darkMode ? <LightModeIcon /> : <DarkModeIcon />}
+            </IconButton>
+
+            {/* Settings Button */}
+            <IconButton
+              color="inherit"
+              onClick={() => setSettingsDialogOpen(true)}
+              aria-label="Open settings"
+              sx={{ ml: 1 }}
+            >
+              <SettingsIcon />
             </IconButton>
 
             {/* Close Button */}
@@ -734,7 +866,7 @@ function App() {
               </Box>
               {activeTags.length > 0 && (
                 <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                  Showing {filteredProjects.length} project(s) with tags: {activeTags.join(', ')}
+                  Showing {filteredAndSortedProjects.length} project(s) with tags: {activeTags.join(', ')}
                 </Typography>
               )}
             </Box>
@@ -753,7 +885,7 @@ function App() {
             </Box>
           ) : (
             <ProjectGrid
-              projects={filteredProjects}
+              projects={filteredAndSortedProjects}
               recentProjects={searchQuery || activeTags.length > 0 ? [] : recentProjects}
               onUpdateProject={handleUpdateProject}
               onLaunchProject={handleLaunchProject}
@@ -871,6 +1003,13 @@ function App() {
             <ListItemText>Close</ListItemText>
           </MenuItem>
         </Menu>
+
+        {/* Settings Dialog */}
+        <SettingsDialog
+          open={settingsDialogOpen}
+          onClose={() => setSettingsDialogOpen(false)}
+          showSnackbar={showSnackbar}
+        />
       </Box>
     </ThemeProvider>
   );

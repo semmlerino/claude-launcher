@@ -40,6 +40,36 @@ struct ProjectUpdate {
     continue_flag: Option<bool>,
 }
 
+// Export/Import structures
+#[derive(Debug, Serialize, Deserialize)]
+struct ExportData {
+    version: u32,
+    exported_at: String,
+    application: String,
+    projects: Vec<ExportedProject>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct ExportedProject {
+    path: String,
+    name: String,
+    tags: Vec<String>,
+    notes: String,
+    pinned: bool,
+    background_color: Option<String>,
+    icon: Option<String>,
+    icon_size: Option<u32>,
+    continue_flag: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct ImportResult {
+    imported: usize,
+    skipped: usize,
+    failed: usize,
+    errors: Vec<String>,
+}
+
 // Helper functions for path sanitization
 fn escape_bash_single_quote(s: &str) -> String {
     // Escape single quotes for bash: ' becomes '\''
@@ -61,6 +91,17 @@ fn validate_path_safe(path: &str) -> Result<(), String> {
         return Err("Path contains invalid control characters".to_string());
     }
     Ok(())
+}
+
+// Helper to parse JSON tags with logging on failure
+fn parse_tags_json(json_str: &str, project_id: &str) -> Vec<String> {
+    match serde_json::from_str(json_str) {
+        Ok(tags) => tags,
+        Err(e) => {
+            warn!("Failed to parse tags JSON for project {}: {} (value: {})", project_id, e, json_str);
+            vec![]
+        }
+    }
 }
 
 // Thread-safe wrapper for SQLite connection
@@ -149,25 +190,18 @@ impl AppDatabase {
         )?;
         
         // Add unique constraint on path if it doesn't exist (for existing databases)
-        // First check if the constraint already exists
-        let has_unique_constraint: bool = conn
-            .query_row(
-                "SELECT COUNT(*) > 0 FROM sqlite_master 
-                 WHERE type = 'index' AND sql LIKE '%UNIQUE%' AND sql LIKE '%path%'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap_or(false);
-        
-        if !has_unique_constraint {
-            info!("Adding UNIQUE constraint on path column");
-            // Create a unique index to enforce the constraint
-            match conn.execute(
-                "CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_path ON projects(path)",
-                [],
-            ) {
-                Ok(_) => info!("Successfully added UNIQUE constraint on path"),
-                Err(e) => warn!("Could not add UNIQUE constraint on path: {}. This may be due to duplicate paths.", e),
+        // Use try/catch pattern instead of fragile LIKE query
+        match conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_path ON projects(path)",
+            [],
+        ) {
+            Ok(_) => info!("Ensured UNIQUE constraint on path column"),
+            Err(e) => {
+                // Only warn if it's not an "already exists" type error
+                let err_str = e.to_string();
+                if !err_str.contains("already exists") {
+                    warn!("Could not add UNIQUE constraint on path: {}. This may be due to duplicate paths.", e);
+                }
             }
         }
 
@@ -336,11 +370,13 @@ impl AppDatabase {
                      FROM projects WHERE path = ?1",
                     params![&path],
                     |row| {
+                        let id: String = row.get(0)?;
+                        let tags_json: String = row.get(3)?;
                         Ok(Project {
-                            id: row.get(0)?,
+                            tags: parse_tags_json(&tags_json, &id),
+                            id,
                             path: row.get(1)?,
                             name: row.get(2)?,
-                            tags: serde_json::from_str(row.get::<_, String>(3)?.as_str()).unwrap_or_default(),
                             notes: row.get(4)?,
                             pinned: row.get(5)?,
                             last_used: row.get(6)?,
@@ -382,11 +418,13 @@ impl AppDatabase {
         
         let projects = stmt
             .query_map([], |row| {
+                let id: String = row.get(0)?;
+                let tags_json: String = row.get(3)?;
                 Ok(Project {
-                    id: row.get(0)?,
+                    tags: parse_tags_json(&tags_json, &id),
+                    id,
                     path: row.get(1)?,
                     name: row.get(2)?,
-                    tags: serde_json::from_str(row.get::<_, String>(3)?.as_str()).unwrap_or_default(),
                     notes: row.get(4)?,
                     pinned: row.get(5)?,
                     last_used: row.get(6)?,
@@ -429,11 +467,13 @@ impl AppDatabase {
         
         let projects = stmt
             .query_map(params![limit], |row| {
+                let id: String = row.get(0)?;
+                let tags_json: String = row.get(3)?;
                 Ok(Project {
-                    id: row.get(0)?,
+                    tags: parse_tags_json(&tags_json, &id),
+                    id,
                     path: row.get(1)?,
                     name: row.get(2)?,
-                    tags: serde_json::from_str(row.get::<_, String>(3)?.as_str()).unwrap_or_default(),
                     notes: row.get(4)?,
                     pinned: row.get(5)?,
                     last_used: row.get(6)?,
@@ -446,7 +486,7 @@ impl AppDatabase {
             .map_err(|e| e.to_string())?
             .collect::<SqliteResult<Vec<_>>>()
             .map_err(|e| e.to_string())?;
-        
+
         Ok(projects)
     }
     
@@ -466,7 +506,9 @@ impl AppDatabase {
             
             if let Some(tags) = &updates.tags {
                 sql_parts.push("tags = ?");
-                params.push(Box::new(serde_json::to_string(tags).unwrap()));
+                let tags_json = serde_json::to_string(tags)
+                    .map_err(|e| format!("Failed to serialize tags: {}", e))?;
+                params.push(Box::new(tags_json));
             }
             
             if let Some(notes) = &updates.notes {
@@ -525,17 +567,19 @@ impl AppDatabase {
     
     fn get_project_by_id(&self, id: &str) -> Result<Project, String> {
         let conn = self.conn.lock();
-        
+
         conn.query_row(
             "SELECT id, path, name, tags, notes, pinned, last_used, background_color, icon, icon_size, continue_flag
              FROM projects WHERE id = ?1",
             params![id],
             |row| {
+                let proj_id: String = row.get(0)?;
+                let tags_json: String = row.get(3)?;
                 Ok(Project {
-                    id: row.get(0)?,
+                    tags: parse_tags_json(&tags_json, &proj_id),
+                    id: proj_id,
                     path: row.get(1)?,
                     name: row.get(2)?,
-                    tags: serde_json::from_str(row.get::<_, String>(3)?.as_str()).unwrap_or_default(),
                     notes: row.get(4)?,
                     pinned: row.get(5)?,
                     last_used: row.get(6)?,
@@ -580,10 +624,10 @@ impl AppDatabase {
     }
     
     fn get_setting(&self, key: &str) -> Result<Option<String>, String> {
-        // Check cache first
+        // Check cache first (use get() to update LRU order on hit)
         {
-            let cache = self.settings_cache.lock();
-            if let Some(value) = cache.peek(key) {
+            let mut cache = self.settings_cache.lock();
+            if let Some(value) = cache.get(key) {
                 return Ok(Some(value.clone()));
             }
         }
@@ -710,8 +754,9 @@ impl AppDatabase {
                     }
                 }
             }
-            Err(_) => {
-                // Directory doesn't exist or can't be read, return empty list
+            Err(e) => {
+                // Directory doesn't exist or can't be read, log and return empty list
+                warn!("Could not read custom icons directory: {}", e);
                 return Ok(vec![]);
             }
         }
@@ -737,25 +782,111 @@ impl AppDatabase {
         
         // Also update any projects that were using this icon
         let custom_icon_path = format!("custom://{}", icon_id);
-        let conn = self.conn.lock();
-        
-        // Update projects using this icon to clear the icon field
-        match conn.execute(
-            "UPDATE projects SET icon = NULL WHERE icon = ?1",
-            params![&custom_icon_path],
-        ) {
-            Ok(updated_count) => {
-                if updated_count > 0 {
-                    info!("Cleared icon from {} projects after deleting custom icon {}", updated_count, icon_id);
-                    // Invalidate cache since we updated projects
-                    drop(conn); // Release lock before calling invalidate
-                    self.invalidate_projects_cache();
+        let should_invalidate = {
+            // Scoped block ensures lock is released before invalidate_projects_cache
+            let conn = self.conn.lock();
+
+            // Update projects using this icon to clear the icon field
+            match conn.execute(
+                "UPDATE projects SET icon = NULL WHERE icon = ?1",
+                params![&custom_icon_path],
+            ) {
+                Ok(updated_count) => {
+                    if updated_count > 0 {
+                        info!("Cleared icon from {} projects after deleting custom icon {}", updated_count, icon_id);
+                        true
+                    } else {
+                        false
+                    }
+                }
+                Err(e) => {
+                    warn!("Failed to clear icon from projects: {}", e);
+                    false
                 }
             }
-            Err(e) => warn!("Failed to clear icon from projects: {}", e),
+        }; // Lock is released here
+
+        if should_invalidate {
+            self.invalidate_projects_cache();
         }
-        
+
         Ok(())
+    }
+}
+
+/// Helper function to launch Claude via WSL using a batch file
+fn launch_wsl_batch(
+    app_handle: &tauri::AppHandle,
+    project: &Project,
+    claude_path: &str,
+    bash_safe_path: &str,
+    continue_flag: bool,
+    keep_terminal: bool,
+) -> Result<serde_json::Value, String> {
+    // Create temporary batch file for reliable WSL launch
+    let temp_dir = env::temp_dir();
+    let batch_file = temp_dir.join(format!("claude_launcher_{}.bat", Uuid::new_v4()));
+
+    // Escape strings for safe interpolation
+    let safe_name = escape_batch_string(&project.name);
+    let windows_path = project.path.replace("\\", "\\\\");
+    let safe_windows_path = escape_batch_string(&windows_path);
+
+    // Build batch file content
+    let batch_content = format!(
+        "@echo off\n\
+         title Claude - {}\n\
+         echo Claude Launcher - WSL Mode\n\
+         echo Project: {}\n\
+         echo Path: {}\n\
+         echo.\n\
+         wsl -e bash -c \"cd \\\"$(wslpath '{}')\\\" && {} --dangerously-skip-permissions{}{}\"\n\
+         {}",
+        safe_name,
+        safe_name,
+        safe_windows_path,
+        bash_safe_path,
+        claude_path,
+        if continue_flag { " --continue" } else { "" },
+        if keep_terminal { " && exec bash" } else { " || echo 'Failed to launch Claude. Exit code: '$?; read -p 'Press Enter to close...'" },
+        if !keep_terminal { "pause" } else { "" }
+    );
+
+    // Write batch file
+    match fs::write(&batch_file, batch_content) {
+        Ok(_) => {
+            info!("Created batch file: {:?}", batch_file);
+
+            // Use the opener plugin to launch the batch file
+            let batch_path_str = batch_file.to_str()
+                .ok_or_else(|| "Batch file path contains invalid UTF-8".to_string())?;
+            match app_handle.opener().open_path(batch_path_str, None::<&str>) {
+                Ok(_) => {
+                    info!("Successfully opened batch file via system handler");
+
+                    // Clean up batch file after a delay
+                    let batch_file_clone = batch_file.clone();
+                    std::thread::spawn(move || {
+                        std::thread::sleep(std::time::Duration::from_secs(60));
+                        let _ = fs::remove_file(&batch_file_clone);
+                        info!("Cleaned up batch file: {:?}", batch_file_clone);
+                    });
+
+                    Ok(serde_json::json!({
+                        "message": format!("Launched Claude Code for {} (WSL)", project.name)
+                    }))
+                }
+                Err(e) => {
+                    warn!("Failed to open batch file: {}", e);
+                    let _ = fs::remove_file(&batch_file);
+                    Err(format!("Failed to launch Claude Code via WSL: {}", e))
+                }
+            }
+        }
+        Err(e) => {
+            warn!("Failed to create batch file: {}", e);
+            Err(format!("Failed to create launch script: {}", e))
+        }
     }
 }
 
@@ -809,117 +940,127 @@ async fn launch_project(
     info!("Launching project with id: {} (continue: {})", id, continue_flag);
     // Get project
     let project = db.get_project_by_id(&id)?;
-    
-    // Update last used
-    db.update_last_used(&id)?;
-    
+
     // Build command
     let shell = app_handle.shell();
-    
+
     // Check if WSL mode is enabled (only on Windows)
     let use_wsl = if cfg!(windows) {
         db.get_setting("use_wsl")?.unwrap_or_else(|| "false".to_string()) == "true"
     } else {
         false
     };
-    
+
     if use_wsl {
         // Get WSL settings
         let claude_path = db.get_setting("claude_executable_path")?
             .unwrap_or_else(|| "claude".to_string());
         let keep_terminal = db.get_setting("keep_terminal_open")?
             .unwrap_or_else(|| "false".to_string()) == "true";
+        let launch_method = db.get_setting("wsl_launch_method")?
+            .unwrap_or_else(|| "batch".to_string());
 
         // Validate paths for security - reject control characters
+        // Do this BEFORE updating last_used to avoid state inconsistency
         validate_path_safe(&project.path)?;
         validate_path_safe(&claude_path)?;
         validate_path_safe(&project.name)?;
 
-        // Create temporary batch file for reliable WSL launch
-        let temp_dir = env::temp_dir();
-        let batch_file = temp_dir.join(format!("claude_launcher_{}.bat", Uuid::new_v4()));
+        // Update last used only after validation succeeds
+        db.update_last_used(&id)?;
 
         // Escape strings for safe interpolation
-        // - Escape project.name for batch file (handles %, ^, &, <, >, |)
-        // - Escape backslashes for Windows path display
-        // - Escape single quotes for wslpath bash command
-        let safe_name = escape_batch_string(&project.name);
-        let windows_path = project.path.replace("\\", "\\\\");
-        let safe_windows_path = escape_batch_string(&windows_path);
         let bash_safe_path = escape_bash_single_quote(&project.path);
 
-        // Build batch file content
-        let batch_content = format!(
-            "@echo off\n\
-             title Claude - {}\n\
-             echo Claude Launcher - WSL Mode\n\
-             echo Project: {}\n\
-             echo Path: {}\n\
-             echo.\n\
-             wsl -e bash -c \"cd \\\"$(wslpath '{}')\\\" && {} --dangerously-skip-permissions{}{}\"\n\
-             {}",
-            safe_name,
-            safe_name,
-            safe_windows_path,
-            bash_safe_path,
-            claude_path,
-            if continue_flag { " --continue" } else { "" },
-            if keep_terminal { " && exec bash" } else { " || echo 'Failed to launch Claude. Exit code: '$?; read -p 'Press Enter to close...'" },
-            if !keep_terminal { "pause" } else { "" }
-        );
-        
-        // Write batch file
-        match fs::write(&batch_file, batch_content) {
-            Ok(_) => {
-                info!("Created batch file: {:?}", batch_file);
-                
-                // Use the opener plugin to launch the batch file
-                // This mimics double-clicking the file in Windows Explorer
-                match app_handle.opener().open_path(batch_file.to_str().unwrap(), None::<&str>) {
+        // Build the WSL command based on launch method
+        match launch_method.as_str() {
+            "wt" => {
+                // Windows Terminal method
+                info!("Using Windows Terminal launch method");
+                let wsl_command = format!(
+                    "wsl -e bash -c \"cd \\\"$(wslpath '{}')\\\" && {} --dangerously-skip-permissions{}{}\"",
+                    bash_safe_path,
+                    claude_path,
+                    if continue_flag { " --continue" } else { "" },
+                    if keep_terminal { " && exec bash" } else { "" }
+                );
+
+                let cmd = shell.command("wt")
+                    .arg("-w").arg("0")
+                    .arg("--title").arg(format!("Claude - {}", project.name))
+                    .arg("cmd").arg("/c").arg(&wsl_command);
+
+                match cmd.spawn() {
                     Ok(_) => {
-                        info!("Successfully opened batch file via system handler");
-                        
-                        // Clean up batch file after a delay
-                        // Use 60 seconds to ensure slow systems have time to execute
-                        let batch_file_clone = batch_file.clone();
-                        std::thread::spawn(move || {
-                            std::thread::sleep(std::time::Duration::from_secs(60));
-                            let _ = fs::remove_file(&batch_file_clone);
-                            info!("Cleaned up batch file: {:?}", batch_file_clone);
-                        });
-                        
+                        info!("Launched via Windows Terminal");
                         Ok(serde_json::json!({
-                            "message": format!("Launched Claude Code for {} (WSL)", project.name)
+                            "message": format!("Launched Claude Code for {} (WSL/WT)", project.name)
                         }))
                     }
                     Err(e) => {
-                        warn!("Failed to open batch file: {}", e);
-                        let _ = fs::remove_file(&batch_file);
-                        Err(format!("Failed to launch Claude Code via WSL: {}", e))
+                        warn!("Windows Terminal failed: {}, falling back to batch", e);
+                        // Fall back to batch method
+                        launch_wsl_batch(&app_handle, &project, &claude_path, &bash_safe_path, continue_flag, keep_terminal)
                     }
                 }
             }
-            Err(e) => {
-                warn!("Failed to create batch file: {}", e);
-                Err(format!("Failed to create launch script: {}", e))
+
+            "powershell" => {
+                // PowerShell method
+                info!("Using PowerShell launch method");
+                let ps_command = format!(
+                    "wsl -e bash -c \\\"cd `$(wslpath '{}') && {} --dangerously-skip-permissions{}{}\\\"",
+                    bash_safe_path,
+                    claude_path,
+                    if continue_flag { " --continue" } else { "" },
+                    if keep_terminal { " && exec bash" } else { "" }
+                );
+
+                let title_safe = project.name.replace("'", "''");
+                let cmd = shell.command("powershell")
+                    .arg("-NoExit")
+                    .arg("-Command")
+                    .arg(format!("$Host.UI.RawUI.WindowTitle = 'Claude - {}'; {}", title_safe, ps_command));
+
+                match cmd.spawn() {
+                    Ok(_) => {
+                        info!("Launched via PowerShell");
+                        Ok(serde_json::json!({
+                            "message": format!("Launched Claude Code for {} (WSL/PS)", project.name)
+                        }))
+                    }
+                    Err(e) => {
+                        warn!("PowerShell failed: {}, falling back to batch", e);
+                        // Fall back to batch method
+                        launch_wsl_batch(&app_handle, &project, &claude_path, &bash_safe_path, continue_flag, keep_terminal)
+                    }
+                }
+            }
+
+            _ => {
+                // Default: batch file method
+                info!("Using batch file launch method");
+                launch_wsl_batch(&app_handle, &project, &claude_path, &bash_safe_path, continue_flag, keep_terminal)
             }
         }
     } else {
         // Non-WSL execution (existing logic)
         let mut cmd = shell.command("claude-code")
             .arg("--dangerously-skip-permissions");
-        
+
         if continue_flag {
             cmd = cmd.arg("--continue");
         }
-        
+
         cmd = cmd.arg(&project.path);
-        
+
         // Launch asynchronously
         info!("Attempting to launch Claude Code for project: {}", project.name);
         match cmd.spawn() {
             Ok(_child) => {
                 info!("Successfully launched Claude Code");
+                // Update last used only after successful launch
+                let _ = db.update_last_used(&id);
                 Ok(serde_json::json!({
                     "message": format!("Launched Claude Code for {}", project.name)
                 }))
@@ -939,6 +1080,8 @@ async fn launch_project(
                     cmd = cmd.arg(&project.path);
                     
                     if let Ok(_child) = cmd.spawn() {
+                        // Update last used only after successful launch
+                        let _ = db.update_last_used(&id);
                         return Ok(serde_json::json!({
                             "message": format!("Launched {} for {}", name, project.name)
                         }));
@@ -1136,14 +1279,129 @@ async fn delete_custom_icon(
 async fn get_custom_icon_path(icon_id: String) -> Result<String, String> {
     let icons_dir = AppDatabase::ensure_custom_icons_dir()?;
     let icon_path = icons_dir.join(&icon_id);
-    
+
     if !icon_path.exists() {
         return Err("Custom icon file not found".to_string());
     }
-    
+
     icon_path.to_str()
         .ok_or("Invalid icon path".to_string())
         .map(|s| s.to_string())
+}
+
+#[tauri::command]
+async fn export_projects(db: State<'_, AppDatabase>, file_path: String) -> Result<serde_json::Value, String> {
+    info!("Exporting projects to: {}", file_path);
+
+    let projects = db.get_all_projects()?;
+
+    let export_data = ExportData {
+        version: 1,
+        exported_at: chrono::Utc::now().to_rfc3339(),
+        application: "claude-launcher".to_string(),
+        projects: projects.into_iter().map(|p| ExportedProject {
+            path: p.path,
+            name: p.name,
+            tags: p.tags,
+            notes: p.notes,
+            pinned: p.pinned,
+            background_color: p.background_color,
+            icon: p.icon,
+            icon_size: p.icon_size,
+            continue_flag: p.continue_flag,
+        }).collect(),
+    };
+
+    let json = serde_json::to_string_pretty(&export_data)
+        .map_err(|e| format!("Failed to serialize projects: {}", e))?;
+
+    fs::write(&file_path, json)
+        .map_err(|e| format!("Failed to write file: {}", e))?;
+
+    info!("Exported {} projects", export_data.projects.len());
+
+    Ok(serde_json::json!({
+        "success": true,
+        "count": export_data.projects.len()
+    }))
+}
+
+#[tauri::command]
+async fn import_projects(db: State<'_, AppDatabase>, file_path: String) -> Result<ImportResult, String> {
+    info!("Importing projects from: {}", file_path);
+
+    let content = fs::read_to_string(&file_path)
+        .map_err(|e| format!("Failed to read file: {}", e))?;
+
+    let export_data: ExportData = serde_json::from_str(&content)
+        .map_err(|e| format!("Invalid JSON format: {}", e))?;
+
+    // Version check for future compatibility
+    if export_data.version > 1 {
+        return Err(format!("Unsupported export version: {}. Please update the application.", export_data.version));
+    }
+
+    let mut imported = 0;
+    let mut skipped = 0;
+    let mut failed = 0;
+    let mut errors = Vec::new();
+
+    for project in export_data.projects {
+        // Try to add the project
+        match db.add_project(project.path.clone()) {
+            Ok(new_project) => {
+                // Check if this is an existing project (path already existed)
+                // add_project returns existing project if path exists
+                let is_new = new_project.name != project.name ||
+                             new_project.tags != project.tags ||
+                             new_project.notes != project.notes;
+
+                if !is_new {
+                    // Path already existed and returned unchanged - skip it
+                    skipped += 1;
+                    continue;
+                }
+
+                // Update with the additional fields from export
+                let update = ProjectUpdate {
+                    name: Some(project.name.clone()),
+                    tags: Some(project.tags.clone()),
+                    notes: Some(project.notes.clone()),
+                    pinned: Some(project.pinned),
+                    background_color: project.background_color.clone(),
+                    icon: project.icon.clone(),
+                    icon_size: project.icon_size,
+                    continue_flag: Some(project.continue_flag),
+                };
+
+                match db.update_project(new_project.id.clone(), update) {
+                    Ok(_) => imported += 1,
+                    Err(e) => {
+                        failed += 1;
+                        errors.push(format!("Failed to update {}: {}", project.path, e));
+                    }
+                }
+            }
+            Err(e) => {
+                // Check if it's a duplicate error
+                if e.contains("already exists") {
+                    skipped += 1;
+                } else {
+                    failed += 1;
+                    errors.push(format!("Failed to import {}: {}", project.path, e));
+                }
+            }
+        }
+    }
+
+    info!("Import complete: {} imported, {} skipped, {} failed", imported, skipped, failed);
+
+    Ok(ImportResult {
+        imported,
+        skipped,
+        failed,
+        errors,
+    })
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -1152,8 +1410,16 @@ pub fn run() {
     info!("Current directory: {:?}", std::env::current_dir());
     info!("Executable path: {:?}", std::env::current_exe());
     
-    let database = AppDatabase::new()
-        .expect("Failed to initialize database");
+    let database = match AppDatabase::new() {
+        Ok(db) => db,
+        Err(e) => {
+            log::error!("Failed to initialize database: {}", e);
+            // Show error dialog before exiting gracefully
+            eprintln!("Fatal error: Failed to initialize database: {}", e);
+            eprintln!("Please check that the application has write permissions to the data directory.");
+            std::process::exit(1);
+        }
+    };
     
     info!("Initializing Tauri plugins...");
     
@@ -1235,7 +1501,9 @@ pub fn run() {
             upload_custom_icon,
             get_custom_icons,
             delete_custom_icon,
-            get_custom_icon_path
+            get_custom_icon_path,
+            export_projects,
+            import_projects
         ])
         .on_window_event(|_window, event| {
             debug!("Window event: {:?}", event);
@@ -1257,21 +1525,20 @@ mod tests {
         // Use in-memory database for tests
         let conn = Connection::open_in_memory()?;
         
-        // Initialize tables with the same schema as production
+        // Initialize tables with the same schema as production (lib.rs lines 97-109)
         conn.execute(
             "CREATE TABLE IF NOT EXISTS projects (
                 id TEXT PRIMARY KEY,
                 path TEXT NOT NULL UNIQUE,
                 name TEXT NOT NULL,
-                tags TEXT NOT NULL,
-                notes TEXT NOT NULL,
-                pinned BOOLEAN NOT NULL DEFAULT 0,
+                tags TEXT,
+                notes TEXT,
+                pinned BOOLEAN DEFAULT 0,
                 last_used TEXT,
                 background_color TEXT,
                 icon TEXT,
                 icon_size INTEGER,
-                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                continue_flag BOOLEAN NOT NULL DEFAULT 0
+                continue_flag BOOLEAN DEFAULT 0
             )",
             [],
         )?;

@@ -1,5 +1,3 @@
-import React from 'react';
-
 const IconPicker = ({ open, onClose, onIconSelect, currentIcon, ...props }) => {
   return open ? (
     <div data-testid="icon-picker" {...props}>

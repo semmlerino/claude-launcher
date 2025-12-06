@@ -1,16 +1,15 @@
-import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import CustomIconUpload from './CustomIconUpload';
 
 // Mock Tauri APIs
 vi.mock('@tauri-apps/plugin-dialog', () => ({
-  open: vi.fn()
+  open: vi.fn(),
 }));
 
 vi.mock('@tauri-apps/api/core', () => ({
-  invoke: vi.fn()
+  invoke: vi.fn(),
 }));
 
 describe('CustomIconUpload', () => {
@@ -28,7 +27,7 @@ describe('CustomIconUpload', () => {
           open={true}
           onClose={mockOnClose}
           onIconUploaded={mockOnIconUploaded}
-        />
+        />,
       );
       
       expect(screen.getByRole('dialog')).toBeInTheDocument();
@@ -41,7 +40,7 @@ describe('CustomIconUpload', () => {
           open={false}
           onClose={mockOnClose}
           onIconUploaded={mockOnIconUploaded}
-        />
+        />,
       );
       
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
@@ -55,7 +54,7 @@ describe('CustomIconUpload', () => {
           open={true}
           onClose={mockOnClose}
           onIconUploaded={mockOnIconUploaded}
-        />
+        />,
       );
 
       expect(screen.getByText('Select Icon File')).toBeInTheDocument();
@@ -72,7 +71,7 @@ describe('CustomIconUpload', () => {
           open={true}
           onClose={mockOnClose}
           onIconUploaded={mockOnIconUploaded}
-        />
+        />,
       );
 
       await user.click(screen.getByText('Select Icon File'));
@@ -85,9 +84,9 @@ describe('CustomIconUpload', () => {
           filters: [
             {
               name: 'Image Files',
-              extensions: ['svg', 'png', 'jpg', 'jpeg', 'ico', 'webp']
-            }
-          ]
+              extensions: ['svg', 'png', 'jpg', 'jpeg', 'ico', 'webp'],
+            },
+          ],
         });
       });
     });
@@ -103,7 +102,7 @@ describe('CustomIconUpload', () => {
           open={true}
           onClose={mockOnClose}
           onIconUploaded={mockOnIconUploaded}
-        />
+        />,
       );
 
       await user.click(screen.getByText('Select Icon File'));
@@ -125,7 +124,7 @@ describe('CustomIconUpload', () => {
           open={true}
           onClose={mockOnClose}
           onIconUploaded={mockOnIconUploaded}
-        />
+        />,
       );
 
       await user.click(screen.getByText('Select Icon File'));
@@ -147,7 +146,7 @@ describe('CustomIconUpload', () => {
           open={true}
           onClose={mockOnClose}
           onIconUploaded={mockOnIconUploaded}
-        />
+        />,
       );
 
       const nameInput = screen.getByLabelText('Custom Name (Optional)');
@@ -162,7 +161,7 @@ describe('CustomIconUpload', () => {
           open={true}
           onClose={mockOnClose}
           onIconUploaded={mockOnIconUploaded}
-        />
+        />,
       );
 
       expect(screen.getByText('If left empty, a unique name will be generated')).toBeInTheDocument();
@@ -176,7 +175,7 @@ describe('CustomIconUpload', () => {
           open={true}
           onClose={mockOnClose}
           onIconUploaded={mockOnIconUploaded}
-        />
+        />,
       );
 
       const uploadButton = screen.getByText('Upload');
@@ -194,7 +193,7 @@ describe('CustomIconUpload', () => {
           open={true}
           onClose={mockOnClose}
           onIconUploaded={mockOnIconUploaded}
-        />
+        />,
       );
 
       await user.click(screen.getByText('Select Icon File'));
@@ -216,8 +215,8 @@ describe('CustomIconUpload', () => {
           id: 'icon123.svg',
           name: 'icon123.svg',
           type: 'svg',
-          path: 'custom://icon123.svg'
-        }
+          path: 'custom://icon123.svg',
+        },
       });
 
       const user = userEvent.setup({ delay: null });
@@ -227,7 +226,7 @@ describe('CustomIconUpload', () => {
           open={true}
           onClose={mockOnClose}
           onIconUploaded={mockOnIconUploaded}
-        />
+        />,
       );
 
       // Select file
@@ -247,7 +246,7 @@ describe('CustomIconUpload', () => {
       await waitFor(() => {
         expect(invoke).toHaveBeenCalledWith('upload_custom_icon', {
           sourcePath: '/path/to/icon.svg',
-          desiredName: 'My Icon'
+          desiredName: 'My Icon',
         });
       });
     });
@@ -260,13 +259,13 @@ describe('CustomIconUpload', () => {
         id: 'icon123.svg',
         name: 'icon123.svg',
         type: 'svg',
-        path: 'custom://icon123.svg'
+        path: 'custom://icon123.svg',
       };
 
       open.mockResolvedValue('/path/to/icon.svg');
       invoke.mockResolvedValue({
         success: true,
-        icon: mockIcon
+        icon: mockIcon,
       });
 
       const user = userEvent.setup({ delay: null });
@@ -276,7 +275,7 @@ describe('CustomIconUpload', () => {
           open={true}
           onClose={mockOnClose}
           onIconUploaded={mockOnIconUploaded}
-        />
+        />,
       );
 
       await user.click(screen.getByText('Select Icon File'));
@@ -308,7 +307,7 @@ describe('CustomIconUpload', () => {
           open={true}
           onClose={mockOnClose}
           onIconUploaded={mockOnIconUploaded}
-        />
+        />,
       );
 
       // Select file first
@@ -342,7 +341,7 @@ describe('CustomIconUpload', () => {
           open={true}
           onClose={mockOnClose}
           onIconUploaded={mockOnIconUploaded}
-        />
+        />,
       );
       
       await user.click(screen.getByText('Select Icon File'));
@@ -364,7 +363,7 @@ describe('CustomIconUpload', () => {
           open={true}
           onClose={mockOnClose}
           onIconUploaded={mockOnIconUploaded}
-        />
+        />,
       );
       
       // Select file and enter name
@@ -386,7 +385,7 @@ describe('CustomIconUpload', () => {
           open={true}
           onClose={mockOnClose}
           onIconUploaded={mockOnIconUploaded}
-        />
+        />,
       );
       
       await user.click(screen.getByText('Cancel'));
@@ -400,7 +399,7 @@ describe('CustomIconUpload', () => {
           open={true}
           onClose={mockOnClose}
           onIconUploaded={mockOnIconUploaded}
-        />
+        />,
       );
       
       // The dialog should have disableEscapeKeyDown when uploading
@@ -416,7 +415,7 @@ describe('CustomIconUpload', () => {
           open={true}
           onClose={mockOnClose}
           onIconUploaded={mockOnIconUploaded}
-        />
+        />,
       );
       
       expect(screen.getByText(/Supported formats:/)).toBeInTheDocument();

@@ -1,9 +1,9 @@
 import React from 'react';
-import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor, act } from '@testing-library/react';
+import { vi, describe, it, expect, beforeEach } from 'vitest';
+import { screen, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { mockIPC, clearMocks } from '@tauri-apps/api/mocks';
-import { renderWithTheme, createMockProject, createMockProjects } from './test/testUtils.jsx';
+import { renderWithTheme, createMockProject } from './test/testUtils.jsx';
 import App from './App';
 
 // Note: Tauri modules are mocked globally in src/test/setup.js
@@ -84,7 +84,7 @@ describe('App Component', () => {
 
   describe('Initialization Flow', () => {
     it('should initialize database, load projects, settings, and check Claude installation', async () => {
-      let commandCalls = [];
+      const commandCalls = [];
 
       mockIPC((cmd, args) => {
         commandCalls.push({ cmd, args });
@@ -617,7 +617,7 @@ describe('App Component', () => {
       });
 
       // Override mock for add_project
-      mockIPC((cmd, args) => {
+      mockIPC((cmd, _args) => {
         if (cmd === 'add_project') {
           throw new Error('Project already exists');
         }

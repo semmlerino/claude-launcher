@@ -5,7 +5,7 @@ import {
   isCustomIcon, 
   getCustomIconFilename, 
   getCustomIconPath,
-  ICON_MAP 
+  ICON_MAP, 
 } from './iconMapping';
 import { Folder } from '@mui/icons-material';
 
@@ -130,7 +130,7 @@ describe('iconMapping', () => {
       // Mock dynamic import of @tauri-apps/api/core
       const mockInvoke = vi.fn().mockResolvedValue('/path/to/icon.svg');
       vi.doMock('@tauri-apps/api/core', () => ({
-        invoke: mockInvoke
+        invoke: mockInvoke,
       }));
 
       // Re-import the function to get the mocked version
@@ -146,7 +146,7 @@ describe('iconMapping', () => {
       // Mock dynamic import with failing invoke
       const mockInvoke = vi.fn().mockRejectedValue(new Error('Failed to get path'));
       vi.doMock('@tauri-apps/api/core', () => ({
-        invoke: mockInvoke
+        invoke: mockInvoke,
       }));
 
       const { getCustomIconPath: mockedGetCustomIconPath } = await import('./iconMapping');

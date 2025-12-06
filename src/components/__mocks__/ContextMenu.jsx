@@ -1,5 +1,3 @@
-import React from 'react';
-
 const ContextMenu = ({ open, onClose, onRename, onChangeColor, onDelete, ...props }) => {
   return open ? (
     <div data-testid="context-menu" {...props}>

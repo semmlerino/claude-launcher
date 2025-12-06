@@ -1,4 +1,3 @@
-import React from 'react';
 
 const IconRenderer = ({ iconName, sx = {}, fallbackIcon, ...props }) => {
   return (

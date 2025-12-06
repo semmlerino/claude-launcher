@@ -1,4 +1,3 @@
-import React from 'react';
 import { Menu, MenuItem, ListItemIcon, ListItemText, Divider } from '@mui/material';
 import { Edit, Palette, Apps, Delete, FolderOpen } from '@mui/icons-material';
 

@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Project Philosophy
+
+This is a personal tool, not enterprise-grade. Keep things simple and be pragmatic. Avoid over-engineering, unnecessary abstractions, or "best practices" that add complexity without clear benefit.
+
 ## ⚠️ IMPORTANT: Windows Compilation Required
 
 **ALWAYS compile for Windows when building production releases:**

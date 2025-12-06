@@ -1,5 +1,3 @@
-import React from 'react';
-
 const CustomIconUpload = ({ open, onClose, onIconUploaded }) => {
   const handleTestUpload = () => {
     if (onIconUploaded) {
@@ -7,7 +5,7 @@ const CustomIconUpload = ({ open, onClose, onIconUploaded }) => {
         id: 'test-icon.svg',
         name: 'test-icon.svg',
         type: 'svg',
-        path: 'custom://test-icon.svg'
+        path: 'custom://test-icon.svg',
       });
     }
   };

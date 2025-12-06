@@ -9,7 +9,7 @@ vi.mock('@tauri-apps/api/core', () => ({
   convertFileSrc: vi.fn((path) => {
     // Convert file paths to asset protocol URLs for testing (Tauri v2)
     return `http://asset.localhost/${path.replace(/^\//, '')}`;
-  })
+  }),
 }));
 
 // Mock the iconMapping module
@@ -31,7 +31,7 @@ vi.mock('../utils/iconMapping', () => ({
       throw new Error('Icon not found');
     }
     return null;
-  })
+  }),
 }));
 
 describe('IconRenderer', () => {
@@ -74,7 +74,7 @@ describe('IconRenderer', () => {
           iconName="Code"
           sx={{ fontSize: 32, color: 'primary.main' }}
           data-testid="icon-renderer"
-        />
+        />,
       );
 
       const renderer = screen.getByTestId('icon-renderer');
@@ -123,7 +123,7 @@ describe('IconRenderer', () => {
           iconName="custom://test-icon.svg" 
           sx={{ fontSize: 48 }}
           data-testid="sized-icon"
-        />
+        />,
       );
       
       await waitFor(() => {
@@ -151,7 +151,7 @@ describe('IconRenderer', () => {
           iconName="invalid-icon"
           fallbackIcon={CustomFallback}
           data-testid="icon-renderer"
-        />
+        />,
       );
 
       // Should render component with custom fallback
@@ -164,7 +164,7 @@ describe('IconRenderer', () => {
         <IconRenderer
           iconName="invalid-icon"
           data-testid="icon-renderer"
-        />
+        />,
       );
 
       // Should render component with default fallback
@@ -181,7 +181,7 @@ describe('IconRenderer', () => {
           data-testid="icon-renderer"
           title="Custom title"
           className="custom-class"
-        />
+        />,
       );
 
       // Props should be forwarded to component

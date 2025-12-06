@@ -1,5 +1,3 @@
-import React from 'react';
-
 const ColorPicker = ({ open, onClose, onColorSelect, currentColor, ...props }) => {
   return open ? (
     <div data-testid="color-picker" {...props}>

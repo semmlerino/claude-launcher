@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -11,7 +11,6 @@ import {
   Paper,
   TextField,
   InputAdornment,
-  Divider,
   IconButton,
   Tooltip,
   Tabs,
@@ -20,6 +19,7 @@ import {
   InputLabel,
   Select,
   MenuItem,
+  Alert,
 } from '@mui/material';
 import {
   Apps,
@@ -146,7 +146,8 @@ const IconPicker = ({ open, onClose, onIconSelect, currentIcon, currentIconSize,
   const [currentTab, setCurrentTab] = useState(0); // 0 = predefined, 1 = custom
   const [customIcons, setCustomIcons] = useState([]);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [_loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState(null);
 
   // Load custom icons when the component mounts or when tab changes
   useEffect(() => {
@@ -168,11 +169,13 @@ const IconPicker = ({ open, onClose, onIconSelect, currentIcon, currentIconSize,
 
   const loadCustomIcons = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const icons = await invoke('get_custom_icons');
       setCustomIcons(icons || []);
     } catch (error) {
       console.error('Failed to load custom icons:', error);
+      setLoadError('Failed to load custom icons. Please try again.');
       setCustomIcons([]);
     } finally {
       setLoading(false);
@@ -242,7 +245,7 @@ const IconPicker = ({ open, onClose, onIconSelect, currentIcon, currentIconSize,
     return icons.filter(icon => 
       icon.name.toLowerCase().includes(query) || 
       (icon.value && icon.value.toLowerCase().includes(query)) ||
-      (icon.id && icon.id.toLowerCase().includes(query))
+      (icon.id && icon.id.toLowerCase().includes(query)),
     );
   };
 
@@ -252,7 +255,7 @@ const IconPicker = ({ open, onClose, onIconSelect, currentIcon, currentIconSize,
     const query = searchQuery.toLowerCase();
     return icons.filter(icon => 
       icon.name.toLowerCase().includes(query) ||
-      icon.id.toLowerCase().includes(query)
+      icon.id.toLowerCase().includes(query),
     );
   };
 
@@ -351,7 +354,7 @@ const IconPicker = ({ open, onClose, onIconSelect, currentIcon, currentIconSize,
                               <IconComponent 
                                 sx={{ 
                                   fontSize: selectedIconSize,
-                                  color: selectedIcon === iconData.value ? 'primary.main' : 'text.primary'
+                                  color: selectedIcon === iconData.value ? 'primary.main' : 'text.primary',
                                 }} 
                               />
                               {selectedIcon === iconData.value && (
@@ -379,6 +382,21 @@ const IconPicker = ({ open, onClose, onIconSelect, currentIcon, currentIconSize,
           {/* Custom Icons Tab */}
           {currentTab === 1 && (
             <Box>
+              {/* Error Display */}
+              {loadError && (
+                <Alert
+                  severity="error"
+                  sx={{ mb: 2 }}
+                  action={
+                    <Button color="inherit" size="small" onClick={loadCustomIcons}>
+                      Retry
+                    </Button>
+                  }
+                >
+                  {loadError}
+                </Alert>
+              )}
+
               {/* Upload Button */}
               <Box sx={{ mb: 3, textAlign: 'center' }}>
                 <Button
@@ -428,7 +446,7 @@ const IconPicker = ({ open, onClose, onIconSelect, currentIcon, currentIconSize,
                           iconName={iconData.path}
                           sx={{ 
                             fontSize: selectedIconSize,
-                            color: selectedIcon === iconData.path ? 'primary.main' : 'text.primary'
+                            color: selectedIcon === iconData.path ? 'primary.main' : 'text.primary',
                           }} 
                         />
                         {selectedIcon === iconData.path && (

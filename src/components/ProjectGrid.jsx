@@ -1,5 +1,5 @@
-import React, { useEffect, useRef } from 'react';
-import { Grid, Box, Typography, Divider, useTheme, useMediaQuery } from '@mui/material';
+import { useRef } from 'react';
+import { Box, Typography, Divider, useTheme, useMediaQuery } from '@mui/material';
 import { Masonry } from '@mui/lab';
 import ProjectCard from './ProjectCard';
 
@@ -23,7 +23,7 @@ const ProjectGrid = ({
   const pinnedProjects = projects.filter(p => p.pinned);
   const unpinnedProjects = projects.filter(p => !p.pinned);
 
-  const renderProjectCard = (project, globalIndex) => {
+  const renderProjectCard = (project, _globalIndex) => {
     return (
       <Box
         key={project.id}

@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Box } from '@mui/material';
 import { Folder } from '@mui/icons-material';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { 
   getIconComponent, 
   isCustomIcon, 
-  getCustomIconPath 
+  getCustomIconPath, 
 } from '../utils/iconMapping';
 
 /**
@@ -57,7 +57,7 @@ const IconRenderer = ({
     // Render custom icon as image
     try {
       const secureUrl = convertFileSrc(customIconPath);
-      console.log('Loading custom icon:', customIconPath, '→', secureUrl);
+      console.debug('Loading custom icon:', customIconPath, '→', secureUrl);
       
       return (
         <Box
@@ -72,7 +72,7 @@ const IconRenderer = ({
             display: 'block',
             borderRadius: (sx.fontSize || 32) > 48 ? 1 : 0, // Add slight rounding for large icons
             filter: (sx.fontSize || 32) > 64 ? 'drop-shadow(0 2px 4px rgba(0,0,0,0.1))' : 'none', // Add shadow for very large icons
-            ...sx
+            ...sx,
           }}
           {...props}
         />
