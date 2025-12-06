@@ -39,6 +39,8 @@ export const createMockProject = (overrides = {}) => ({
   pinned: false,
   last_used: '2024-01-01T00:00:00Z',
   background_color: null,
+  continue_flag: false,
+  resume_flag: false,
   ...overrides,
 });
 

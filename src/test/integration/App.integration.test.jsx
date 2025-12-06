@@ -17,6 +17,8 @@ const mockProjects = [
     notes: 'Sample project notes',
     pinned: false,
     last_used: '2025-07-14T12:00:00Z',
+    continue_flag: false,
+    resume_flag: false,
   },
   {
     id: '2',
@@ -26,6 +28,8 @@ const mockProjects = [
     notes: '',
     pinned: true,
     last_used: '2025-07-13T12:00:00Z',
+    continue_flag: false,
+    resume_flag: false,
   },
 ];
 

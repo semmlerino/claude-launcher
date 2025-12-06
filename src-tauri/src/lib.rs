@@ -27,6 +27,7 @@ struct Project {
     icon: Option<String>,
     icon_size: Option<u32>,
     continue_flag: bool,
+    resume_flag: bool,
     group_id: Option<String>,
 }
 
@@ -57,6 +58,7 @@ struct ProjectUpdate {
     icon: Option<String>,
     icon_size: Option<u32>,
     continue_flag: Option<bool>,
+    resume_flag: Option<bool>,
     group_id: Option<String>,
 }
 
@@ -82,6 +84,8 @@ struct ExportedProject {
     icon: Option<String>,
     icon_size: Option<u32>,
     continue_flag: bool,
+    #[serde(default)]
+    resume_flag: bool,
     #[serde(default)]
     group_id: Option<String>,
 }
@@ -202,7 +206,8 @@ impl AppDatabase {
                 background_color TEXT,
                 icon TEXT,
                 icon_size INTEGER,
-                continue_flag BOOLEAN DEFAULT 0
+                continue_flag BOOLEAN DEFAULT 0,
+                resume_flag BOOLEAN DEFAULT 0
             )",
             [],
         )?;
@@ -219,7 +224,6 @@ impl AppDatabase {
         // Initialize default WSL settings if they don't exist
         let default_settings = vec![
             ("use_wsl", "true"),  // Enable WSL by default on Windows
-            ("claude_executable_path", "/home/gabrielh/.nvm/versions/node/v24.1.0/bin/claude"),
             ("keep_terminal_open", "false"),
             ("wsl_launch_method", "batch"),  // Options: batch, wt, powershell
         ];
@@ -370,6 +374,26 @@ impl AppDatabase {
             }
         }
 
+        // Add resume_flag column if it doesn't exist (for existing databases)
+        let has_resume_flag: bool = conn
+            .query_row(
+                "SELECT COUNT(*) > 0 FROM pragma_table_info('projects') WHERE name = 'resume_flag'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(false);
+
+        if !has_resume_flag {
+            info!("Adding resume_flag column to projects table");
+            match conn.execute(
+                "ALTER TABLE projects ADD COLUMN resume_flag BOOLEAN DEFAULT 0",
+                [],
+            ) {
+                Ok(_) => info!("Successfully added resume_flag column"),
+                Err(e) => warn!("Could not add resume_flag column: {}", e),
+            }
+        }
+
         Ok(AppDatabase {
             conn: Mutex::new(conn),
             settings_cache: Mutex::new(LruCache::new(NonZeroUsize::new(100).unwrap())),
@@ -411,8 +435,8 @@ impl AppDatabase {
         
         // Try to insert the project
         let result = conn.execute(
-            "INSERT INTO projects (id, path, name, tags, notes, pinned, last_used, background_color, icon, icon_size, continue_flag, group_id)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+            "INSERT INTO projects (id, path, name, tags, notes, pinned, last_used, background_color, icon, icon_size, continue_flag, resume_flag, group_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
             params![
                 &id,
                 &path,
@@ -424,6 +448,7 @@ impl AppDatabase {
                 Option::<String>::None,
                 Option::<String>::None,
                 Option::<u32>::None,
+                false,
                 false,
                 Option::<String>::None
             ],
@@ -445,6 +470,7 @@ impl AppDatabase {
                     icon: None,
                     icon_size: None,
                     continue_flag: false,
+                    resume_flag: false,
                     group_id: None,
                 })
             }
@@ -453,7 +479,7 @@ impl AppDatabase {
                 // Project already exists, fetch and return it
                 info!("Project already exists at path: {}, returning existing project", path);
                 conn.query_row(
-                    "SELECT id, path, name, tags, notes, pinned, last_used, background_color, icon, icon_size, continue_flag, group_id
+                    "SELECT id, path, name, tags, notes, pinned, last_used, background_color, icon, icon_size, continue_flag, resume_flag, group_id
                      FROM projects WHERE path = ?1",
                     params![&path],
                     |row| {
@@ -471,7 +497,8 @@ impl AppDatabase {
                             icon: row.get(8)?,
                             icon_size: row.get(9)?,
                             continue_flag: row.get(10)?,
-                            group_id: row.get(11)?,
+                            resume_flag: row.get(11)?,
+                            group_id: row.get(12)?,
                         })
                     },
                 )
@@ -498,7 +525,7 @@ impl AppDatabase {
 
         let mut stmt = conn
             .prepare(
-                "SELECT id, path, name, tags, notes, pinned, last_used, background_color, icon, icon_size, continue_flag, group_id
+                "SELECT id, path, name, tags, notes, pinned, last_used, background_color, icon, icon_size, continue_flag, resume_flag, group_id
                  FROM projects
                  ORDER BY pinned DESC, last_used DESC NULLS LAST",
             )
@@ -520,7 +547,8 @@ impl AppDatabase {
                     icon: row.get(8)?,
                     icon_size: row.get(9)?,
                     continue_flag: row.get(10)?,
-                    group_id: row.get(11)?,
+                    resume_flag: row.get(11)?,
+                    group_id: row.get(12)?,
                 })
             })
             .map_err(|e| e.to_string())?
@@ -546,7 +574,7 @@ impl AppDatabase {
 
         let mut stmt = conn
             .prepare(
-                "SELECT id, path, name, tags, notes, pinned, last_used, background_color, icon, icon_size, continue_flag, group_id
+                "SELECT id, path, name, tags, notes, pinned, last_used, background_color, icon, icon_size, continue_flag, resume_flag, group_id
                  FROM projects
                  WHERE last_used IS NOT NULL
                  ORDER BY last_used DESC
@@ -570,7 +598,8 @@ impl AppDatabase {
                     icon: row.get(8)?,
                     icon_size: row.get(9)?,
                     continue_flag: row.get(10)?,
-                    group_id: row.get(11)?,
+                    resume_flag: row.get(11)?,
+                    group_id: row.get(12)?,
                 })
             })
             .map_err(|e| e.to_string())?
@@ -631,6 +660,11 @@ impl AppDatabase {
                 params.push(Box::new(*continue_flag));
             }
 
+            if let Some(resume_flag) = &updates.resume_flag {
+                sql_parts.push("resume_flag = ?");
+                params.push(Box::new(*resume_flag));
+            }
+
             if let Some(group_id) = &updates.group_id {
                 sql_parts.push("group_id = ?");
                 // Empty string means remove from group (set to NULL)
@@ -669,7 +703,7 @@ impl AppDatabase {
         let conn = self.conn.lock();
 
         conn.query_row(
-            "SELECT id, path, name, tags, notes, pinned, last_used, background_color, icon, icon_size, continue_flag, group_id
+            "SELECT id, path, name, tags, notes, pinned, last_used, background_color, icon, icon_size, continue_flag, resume_flag, group_id
              FROM projects WHERE id = ?1",
             params![id],
             |row| {
@@ -687,7 +721,8 @@ impl AppDatabase {
                     icon: row.get(8)?,
                     icon_size: row.get(9)?,
                     continue_flag: row.get(10)?,
-                    group_id: row.get(11)?,
+                    resume_flag: row.get(11)?,
+                    group_id: row.get(12)?,
                 })
             },
         )
@@ -1004,9 +1039,9 @@ impl AppDatabase {
 fn launch_wsl_batch(
     app_handle: &tauri::AppHandle,
     project: &Project,
-    claude_path: &str,
     bash_safe_path: &str,
     continue_flag: bool,
+    resume_flag: bool,
     keep_terminal: bool,
 ) -> Result<serde_json::Value, String> {
     // Create temporary batch file for reliable WSL launch
@@ -1018,6 +1053,13 @@ fn launch_wsl_batch(
     let windows_path = project.path.replace("\\", "\\\\");
     let safe_windows_path = escape_batch_string(&windows_path);
 
+    // Build flags string: claude [--continue] [--resume] --dangerously-skip-permissions
+    let flags = format!(
+        "{}{}--dangerously-skip-permissions",
+        if continue_flag { "--continue " } else { "" },
+        if resume_flag { "--resume " } else { "" }
+    );
+
     // Build batch file content
     let batch_content = format!(
         "@echo off\n\
@@ -1026,14 +1068,13 @@ fn launch_wsl_batch(
          echo Project: {}\n\
          echo Path: {}\n\
          echo.\n\
-         wsl -e bash -c \"cd \\\"$(wslpath '{}')\\\" && {} --dangerously-skip-permissions{}{}\"\n\
+         wsl -e bash -lc \"cd \\\"$(wslpath '{}')\\\" && claude {}{}\"\n\
          {}",
         safe_name,
         safe_name,
         safe_windows_path,
         bash_safe_path,
-        claude_path,
-        if continue_flag { " --continue" } else { "" },
+        flags,
         if keep_terminal { " && exec bash" } else { " || echo 'Failed to launch Claude. Exit code: '$?; read -p 'Press Enter to close...'" },
         if !keep_terminal { "pause" } else { "" }
     );
@@ -1140,8 +1181,9 @@ async fn launch_project(
     db: State<'_, AppDatabase>,
     id: String,
     continue_flag: bool,
+    resume_flag: bool,
 ) -> Result<serde_json::Value, String> {
-    info!("Launching project with id: {} (continue: {})", id, continue_flag);
+    info!("Launching project with id: {} (continue: {}, resume: {})", id, continue_flag, resume_flag);
     // Get project
     let project = db.get_project_by_id(&id)?;
 
@@ -1157,8 +1199,6 @@ async fn launch_project(
 
     if use_wsl {
         // Get WSL settings
-        let claude_path = db.get_setting("claude_executable_path")?
-            .unwrap_or_else(|| "claude".to_string());
         let keep_terminal = db.get_setting("keep_terminal_open")?
             .unwrap_or_else(|| "false".to_string()) == "true";
         let launch_method = db.get_setting("wsl_launch_method")?
@@ -1167,7 +1207,6 @@ async fn launch_project(
         // Validate paths for security - reject control characters
         // Do this BEFORE updating last_used to avoid state inconsistency
         validate_path_safe(&project.path)?;
-        validate_path_safe(&claude_path)?;
         validate_path_safe(&project.name)?;
 
         // Update last used only after validation succeeds
@@ -1176,16 +1215,22 @@ async fn launch_project(
         // Escape strings for safe interpolation
         let bash_safe_path = escape_bash_single_quote(&project.path);
 
+        // Build flags string: claude [--continue] [--resume] --dangerously-skip-permissions
+        let flags = format!(
+            "{}{}--dangerously-skip-permissions",
+            if continue_flag { "--continue " } else { "" },
+            if resume_flag { "--resume " } else { "" }
+        );
+
         // Build the WSL command based on launch method
         match launch_method.as_str() {
             "wt" => {
                 // Windows Terminal method
                 info!("Using Windows Terminal launch method");
                 let wsl_command = format!(
-                    "wsl -e bash -c \"cd \\\"$(wslpath '{}')\\\" && {} --dangerously-skip-permissions{}{}\"",
+                    "wsl -e bash -lc \"cd \\\"$(wslpath '{}')\\\" && claude {}{}\"",
                     bash_safe_path,
-                    claude_path,
-                    if continue_flag { " --continue" } else { "" },
+                    flags,
                     if keep_terminal { " && exec bash" } else { "" }
                 );
 
@@ -1204,7 +1249,7 @@ async fn launch_project(
                     Err(e) => {
                         warn!("Windows Terminal failed: {}, falling back to batch", e);
                         // Fall back to batch method
-                        launch_wsl_batch(&app_handle, &project, &claude_path, &bash_safe_path, continue_flag, keep_terminal)
+                        launch_wsl_batch(&app_handle, &project, &bash_safe_path, continue_flag, resume_flag, keep_terminal)
                     }
                 }
             }
@@ -1213,10 +1258,9 @@ async fn launch_project(
                 // PowerShell method
                 info!("Using PowerShell launch method");
                 let ps_command = format!(
-                    "wsl -e bash -c \\\"cd `$(wslpath '{}') && {} --dangerously-skip-permissions{}{}\\\"",
+                    "wsl -e bash -lc \\\"cd `$(wslpath '{}') && claude {}{}\\\"",
                     bash_safe_path,
-                    claude_path,
-                    if continue_flag { " --continue" } else { "" },
+                    flags,
                     if keep_terminal { " && exec bash" } else { "" }
                 );
 
@@ -1236,7 +1280,7 @@ async fn launch_project(
                     Err(e) => {
                         warn!("PowerShell failed: {}, falling back to batch", e);
                         // Fall back to batch method
-                        launch_wsl_batch(&app_handle, &project, &claude_path, &bash_safe_path, continue_flag, keep_terminal)
+                        launch_wsl_batch(&app_handle, &project, &bash_safe_path, continue_flag, resume_flag, keep_terminal)
                     }
                 }
             }
@@ -1244,18 +1288,20 @@ async fn launch_project(
             _ => {
                 // Default: batch file method
                 info!("Using batch file launch method");
-                launch_wsl_batch(&app_handle, &project, &claude_path, &bash_safe_path, continue_flag, keep_terminal)
+                launch_wsl_batch(&app_handle, &project, &bash_safe_path, continue_flag, resume_flag, keep_terminal)
             }
         }
     } else {
-        // Non-WSL execution (existing logic)
-        let mut cmd = shell.command("claude-code")
-            .arg("--dangerously-skip-permissions");
+        // Non-WSL execution - build command with flags in order: [--continue] [--resume] --dangerously-skip-permissions
+        let mut cmd = shell.command("claude");
 
         if continue_flag {
             cmd = cmd.arg("--continue");
         }
-
+        if resume_flag {
+            cmd = cmd.arg("--resume");
+        }
+        cmd = cmd.arg("--dangerously-skip-permissions");
         cmd = cmd.arg(&project.path);
 
         // Launch asynchronously
@@ -1270,29 +1316,7 @@ async fn launch_project(
                 }))
             }
             Err(e) => {
-                warn!("Failed to launch claude-code: {}", e);
-                // Try alternative command names
-                let alt_names = ["claude", "claude-cli"];
-                for name in &alt_names {
-                    let mut cmd = shell.command(name)
-                        .arg("--dangerously-skip-permissions");
-                    
-                    if continue_flag {
-                        cmd = cmd.arg("--continue");
-                    }
-                    
-                    cmd = cmd.arg(&project.path);
-                    
-                    if let Ok(_child) = cmd.spawn() {
-                        // Update last used only after successful launch
-                        let _ = db.update_last_used(&id);
-                        return Ok(serde_json::json!({
-                            "message": format!("Launched {} for {}", name, project.name)
-                        }));
-                    }
-                }
-                
-                Err(format!("Failed to launch Claude Code: {}. Make sure claude-code is installed and in PATH", e))
+                Err(format!("Failed to launch Claude Code: {}. Make sure claude is installed and in PATH", e))
             }
         }
     }
@@ -1336,23 +1360,18 @@ async fn delete_project(db: State<'_, AppDatabase>, id: String) -> Result<serde_
 #[tauri::command]
 async fn check_claude_installed(app_handle: tauri::AppHandle, db: State<'_, AppDatabase>) -> Result<serde_json::Value, String> {
     let shell = app_handle.shell();
-    
+
     // Check if WSL mode is enabled (only on Windows)
     let use_wsl = if cfg!(windows) {
         db.get_setting("use_wsl")?.unwrap_or_else(|| "false".to_string()) == "true"
     } else {
         false
     };
-    
+
     if use_wsl {
-        // Check Claude installation via WSL
-        let claude_path = db.get_setting("claude_executable_path")?
-            .unwrap_or_else(|| "claude".to_string());
-        
-        let wsl_cmd = format!("{} --version", claude_path);
-        
+        // Check Claude installation via WSL using global 'claude' command
         match shell.command("wsl")
-            .args(&["-e", "bash", "-c", &wsl_cmd])
+            .args(&["-e", "bash", "-c", "claude --version"])
             .output()
             .await {
             Ok(output) => {
@@ -1361,7 +1380,7 @@ async fn check_claude_installed(app_handle: tauri::AppHandle, db: State<'_, AppD
                     return Ok(serde_json::json!({
                         "installed": true,
                         "version": version,
-                        "command": claude_path,
+                        "command": "claude",
                         "via_wsl": true
                     }));
                 }
@@ -1375,26 +1394,22 @@ async fn check_claude_installed(app_handle: tauri::AppHandle, db: State<'_, AppD
             }
         }
     } else {
-        // Non-WSL check (existing logic)
-        let cmd_names = ["claude-code", "claude", "claude-cli"];
-        
-        for name in &cmd_names {
-            match shell.command(name).arg("--version").output().await {
-                Ok(output) => {
-                    if output.status.success() {
-                        let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                        return Ok(serde_json::json!({
-                            "installed": true,
-                            "version": version,
-                            "command": name
-                        }));
-                    }
+        // Non-WSL check - just check 'claude' command
+        match shell.command("claude").arg("--version").output().await {
+            Ok(output) => {
+                if output.status.success() {
+                    let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    return Ok(serde_json::json!({
+                        "installed": true,
+                        "version": version,
+                        "command": "claude"
+                    }));
                 }
-                Err(_) => continue,
             }
+            Err(_) => {}
         }
     }
-    
+
     Ok(serde_json::json!({
         "installed": false,
         "version": null
@@ -1579,6 +1594,7 @@ async fn export_projects(db: State<'_, AppDatabase>, file_path: String) -> Resul
             icon: p.icon,
             icon_size: p.icon_size,
             continue_flag: p.continue_flag,
+            resume_flag: p.resume_flag,
             group_id: p.group_id,
         }).collect(),
         groups,
@@ -1662,6 +1678,7 @@ async fn import_projects(db: State<'_, AppDatabase>, file_path: String) -> Resul
                     icon: project.icon.clone(),
                     icon_size: project.icon_size,
                     continue_flag: Some(project.continue_flag),
+                    resume_flag: Some(project.resume_flag),
                     group_id: project.group_id.clone(),
                 };
 
@@ -1758,6 +1775,7 @@ async fn move_project_to_group(
         icon: None,
         icon_size: None,
         continue_flag: None,
+        resume_flag: None,
         group_id: group_value,
     };
 

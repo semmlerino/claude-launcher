@@ -49,11 +49,17 @@ const ProjectCard = React.memo(
     const [editedTags, setEditedTags] = useState(project.tags.join(', '));
     const [editedNotes, setEditedNotes] = useState(project.notes);
     const [continueFlag, setContinueFlag] = useState(project.continue_flag || false);
+    const [resumeFlag, setResumeFlag] = useState(project.resume_flag || false);
 
     // Sync local continueFlag state when project prop changes
     useEffect(() => {
       setContinueFlag(project.continue_flag || false);
     }, [project.continue_flag]);
+
+    // Sync local resumeFlag state when project prop changes
+    useEffect(() => {
+      setResumeFlag(project.resume_flag || false);
+    }, [project.resume_flag]);
 
     const [isRenaming, setIsRenaming] = useState(false);
     const [renameValue, setRenameValue] = useState(project.name);
@@ -98,7 +104,7 @@ const ProjectCard = React.memo(
     };
 
     const handleLaunch = () => {
-      onLaunch(project.id, continueFlag);
+      onLaunch(project.id, continueFlag, resumeFlag);
     };
 
     const handleContextMenu = event => {
@@ -377,6 +383,21 @@ const ProjectCard = React.memo(
                     />
                   }
                   label="Continue"
+                  sx={{ mr: 0 }}
+                />
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={resumeFlag}
+                      onChange={e => {
+                        const newValue = e.target.checked;
+                        setResumeFlag(newValue);
+                        onUpdate(project.id, { resume_flag: newValue });
+                      }}
+                      size="small"
+                    />
+                  }
+                  label="Resume"
                   sx={{ mr: 1 }}
                 />
                 <Button
