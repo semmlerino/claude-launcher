@@ -41,6 +41,8 @@ describe('App Component', () => {
           return mockProjects;
         case 'get_recent_projects':
           return mockProjects.slice(0, args?.limit || 5);
+        case 'get_groups':
+          return [];
         case 'get_setting':
           return mockSettings[args?.key] || null;
         case 'set_setting':
@@ -95,6 +97,8 @@ describe('App Component', () => {
             return mockProjects;
           case 'get_recent_projects':
             return mockProjects.slice(0, 5);
+          case 'get_groups':
+            return [];
           case 'get_setting':
             return mockSettings[args?.key];
           case 'check_claude_installed':
@@ -146,6 +150,8 @@ describe('App Component', () => {
             return null;
           case 'get_recent_projects':
             return [];
+          case 'get_groups':
+            return [];
           case 'get_setting':
             return null;
           case 'check_claude_installed':
@@ -186,6 +192,8 @@ describe('App Component', () => {
           case 'get_projects':
             return [];
           case 'get_recent_projects':
+            return [];
+          case 'get_groups':
             return [];
           case 'get_setting':
             return null;
@@ -503,6 +511,8 @@ describe('App Component', () => {
             return mockProjects;
           case 'get_recent_projects':
             return [];
+          case 'get_groups':
+            return [];
           case 'get_setting':
             return null;
           case 'check_claude_installed':
@@ -548,6 +558,8 @@ describe('App Component', () => {
             return mockProjects;
           case 'get_recent_projects':
             return [];
+          case 'get_groups':
+            return [];
           case 'get_setting':
             return mockSettings[args?.key];
           case 'check_claude_installed':
@@ -586,6 +598,8 @@ describe('App Component', () => {
           case 'init_database':
             return null;
           case 'get_recent_projects':
+            return [];
+          case 'get_groups':
             return [];
           case 'get_setting':
             return null;
@@ -653,23 +667,16 @@ describe('App Component', () => {
         expect(testProject1Elements.length).toBeGreaterThan(0);
       });
 
-      // Find the main app container
-      const appContainer = document.querySelector('body > div > div');
-
-      // Fire drag over event
+      // Emit Tauri drag-enter event
       await act(async () => {
-        const dragOverEvent = new window.Event('dragover', { bubbles: true });
-        dragOverEvent.preventDefault = vi.fn();
-        appContainer.dispatchEvent(dragOverEvent);
+        globalThis.emitTauriEvent('tauri://drag-enter', {});
       });
 
       expect(screen.getByText('Drop folder here')).toBeInTheDocument();
 
-      // Fire drag leave event
+      // Emit Tauri drag-leave event
       await act(async () => {
-        const dragLeaveEvent = new window.Event('dragleave', { bubbles: true });
-        dragLeaveEvent.preventDefault = vi.fn();
-        appContainer.dispatchEvent(dragLeaveEvent);
+        globalThis.emitTauriEvent('tauri://drag-leave', {});
       });
 
       expect(screen.queryByText('Drop folder here')).not.toBeInTheDocument();

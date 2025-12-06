@@ -41,6 +41,8 @@ const ProjectCard = React.memo(
     onTagClick,
     isSelected,
     loadingOperations = {},
+    groups = [],
+    onMoveToGroup,
   }) => {
     const [isEditing, setIsEditing] = useState(false);
     const [editedName, setEditedName] = useState(project.name);
@@ -429,6 +431,9 @@ const ProjectCard = React.memo(
           onChangeIcon={() => setIconPickerOpen(true)}
           onOpenFolder={handleOpenFolder}
           onDelete={() => onDelete(project.id)}
+          groups={groups}
+          currentGroupId={project.group_id}
+          onMoveToGroup={onMoveToGroup ? (groupId) => onMoveToGroup(project.id, groupId) : undefined}
         />
 
         {/* Color Picker Dialog */}

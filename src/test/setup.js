@@ -457,6 +457,10 @@ vi.mock('@mui/icons-material', () => {
     Settings: createIcon('SettingsIcon'),
     FileDownload: createIcon('FileDownloadIcon'),
     FileUpload: createIcon('FileUploadIcon'),
+    // Icons for groups feature
+    FolderSpecial: createIcon('FolderSpecialIcon'),
+    RemoveCircleOutline: createIcon('RemoveCircleOutlineIcon'),
+    DragIndicator: createIcon('DragIndicatorIcon'),
     Engineering: createIcon('EngineeringIcon'),
     Construction: createIcon('ConstructionIcon'),
     Handyman: createIcon('HandymanIcon'),
@@ -631,11 +635,23 @@ Object.defineProperty(window, 'matchMedia', {
 // Re-establish mock implementations before each test
 // This is necessary because vitest's mockReset: true clears implementations
 import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
+import { listen, emit } from '@tauri-apps/api/event';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { mockIPC, clearMocks } from '@tauri-apps/api/mocks';
 
+// Tauri event listener registry for testing
+globalThis.__tauriEventListeners = new Map();
+
+// Helper to emit Tauri events in tests
+globalThis.emitTauriEvent = (eventName, payload) => {
+  const listeners = globalThis.__tauriEventListeners.get(eventName) || [];
+  listeners.forEach(callback => callback({ payload }));
+};
+
 beforeEach(() => {
+  // Clear event listeners between tests
+  globalThis.__tauriEventListeners = new Map();
+
   // Re-establish invoke implementation
   vi.mocked(invoke).mockImplementation((cmd, args) => {
     if (globalThis.__tauriIpcHandler) {
@@ -653,8 +669,30 @@ beforeEach(() => {
     globalThis.__tauriIpcHandler = null;
   });
 
-  // Re-establish event listener mock
-  vi.mocked(listen).mockImplementation(() => Promise.resolve(() => {}));
+  // Re-establish event listener mock that captures callbacks
+  vi.mocked(listen).mockImplementation((eventName, callback) => {
+    if (!globalThis.__tauriEventListeners.has(eventName)) {
+      globalThis.__tauriEventListeners.set(eventName, []);
+    }
+    globalThis.__tauriEventListeners.get(eventName).push(callback);
+
+    // Return unlisten function
+    return Promise.resolve(() => {
+      const listeners = globalThis.__tauriEventListeners.get(eventName) || [];
+      const index = listeners.indexOf(callback);
+      if (index > -1) {
+        listeners.splice(index, 1);
+      }
+    });
+  });
+
+  // Re-establish emit mock
+  if (emit) {
+    vi.mocked(emit).mockImplementation((eventName, payload) => {
+      globalThis.emitTauriEvent(eventName, payload);
+      return Promise.resolve();
+    });
+  }
 
   // Re-establish webview window mock
   vi.mocked(getCurrentWebviewWindow).mockReturnValue({

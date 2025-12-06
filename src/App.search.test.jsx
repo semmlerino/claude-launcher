@@ -28,6 +28,8 @@ describe('App Search Tests - Debug', () => {
           return mockProjects;
         case 'get_recent_projects':
           return mockProjects.slice(0, args?.limit || 5);
+        case 'get_groups':
+          return [];
         case 'get_setting':
           return null;
         case 'check_claude_installed':

@@ -126,7 +126,7 @@ describe('ProjectGrid', () => {
 
       expect(screen.getByText('Pinned Projects')).toBeInTheDocument();
       expect(screen.getByText('Other Projects')).toBeInTheDocument();
-      expect(screen.getByText('No projects yet')).toBeInTheDocument();
+      expect(screen.getByText('All projects are grouped or pinned')).toBeInTheDocument();
     });
   });
 

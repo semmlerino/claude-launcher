@@ -49,9 +49,11 @@ import {
   Settings as SettingsIcon,
   FileDownload as ExportIcon,
   FileUpload as ImportIcon,
+  FolderSpecial as GroupIcon,
 } from '@mui/icons-material';
 import ProjectGrid from './components/ProjectGrid';
 import SettingsDialog from './components/SettingsDialog';
+import GroupManager from './components/GroupManager';
 import './App.css';
 
 // Simple fuzzy search implementation
@@ -121,6 +123,8 @@ function App() {
   const initializingRef = useRef(false);
   const [globalContextMenu, setGlobalContextMenu] = useState(null);
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
+  const [groupManagerOpen, setGroupManagerOpen] = useState(false);
+  const [groups, setGroups] = useState([]);
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
 
@@ -195,6 +199,16 @@ function App() {
       showSnackbar(`Failed to load projects: ${error}`, 'error');
     }
   }, [showSnackbar]);
+
+  // Load groups from backend
+  const loadGroups = useCallback(async () => {
+    try {
+      const groupsData = await invoke('get_groups');
+      setGroups(groupsData || []);
+    } catch (error) {
+      logError(`Failed to load groups: ${error}`);
+    }
+  }, []);
 
   // Check if Claude Code is installed
   const checkClaudeInstalled = useCallback(async () => {
@@ -325,6 +339,7 @@ function App() {
         // Load all data in parallel
         await Promise.all([
           loadProjects(),
+          loadGroups(),
           loadSortPreference(),
           loadThemePreference(),
           checkClaudeInstalled(),
@@ -643,6 +658,78 @@ function App() {
     [updateProjectInState, showSnackbar, loadProjects],
   );
 
+  // Group management handlers
+  const handleCreateGroup = useCallback(async (name, color) => {
+    const newGroup = await invoke('create_group', { name, color });
+    setGroups(prev => [...prev, newGroup]);
+    return newGroup;
+  }, []);
+
+  const handleUpdateGroup = useCallback(async (groupId, updates) => {
+    const updatedGroup = await invoke('update_group', { id: groupId, updates });
+    setGroups(prev => prev.map(g => g.id === groupId ? updatedGroup : g));
+    return updatedGroup;
+  }, []);
+
+  const handleDeleteGroup = useCallback(async (groupId) => {
+    await invoke('delete_group', { id: groupId });
+    setGroups(prev => prev.filter(g => g.id !== groupId));
+    // Also clear group_id from projects that were in this group
+    setProjects(prev => prev.map(p =>
+      p.group_id === groupId ? { ...p, group_id: null } : p
+    ));
+  }, []);
+
+  const handleReorderGroups = useCallback(async (groupIds) => {
+    const reorderedGroups = await invoke('reorder_groups', { groupIds });
+    setGroups(reorderedGroups);
+    return reorderedGroups;
+  }, []);
+
+  const handleMoveToGroup = useCallback(async (projectId, groupId) => {
+    // Optimistic update
+    const originalProject = projects.find(p => p.id === projectId);
+    if (!originalProject) return;
+
+    updateProjectInState(projectId, { group_id: groupId || null });
+
+    try {
+      await invoke('move_project_to_group', {
+        projectId,
+        groupId: groupId || null
+      });
+      showSnackbar(groupId ? 'Project moved to group' : 'Project removed from group', 'success');
+    } catch (error) {
+      // Revert on error
+      updateProjectInState(projectId, { group_id: originalProject.group_id });
+      showSnackbar(`Failed to move project: ${error}`, 'error');
+    }
+  }, [projects, updateProjectInState, showSnackbar]);
+
+  const handleToggleGroupCollapse = useCallback(async (groupId) => {
+    const group = groups.find(g => g.id === groupId);
+    if (!group) return;
+
+    const newCollapsed = !group.collapsed;
+    // Optimistic update
+    setGroups(prev => prev.map(g =>
+      g.id === groupId ? { ...g, collapsed: newCollapsed } : g
+    ));
+
+    try {
+      await invoke('update_group', {
+        id: groupId,
+        updates: { collapsed: newCollapsed }
+      });
+    } catch (error) {
+      // Revert on error
+      setGroups(prev => prev.map(g =>
+        g.id === groupId ? { ...g, collapsed: !newCollapsed } : g
+      ));
+      logError(`Failed to toggle group collapse: ${error}`);
+    }
+  }, [groups]);
+
   // Keyboard navigation functionality removed per user request
 
   // Close window function
@@ -795,6 +882,18 @@ function App() {
               {darkMode ? <LightModeIcon /> : <DarkModeIcon />}
             </IconButton>
 
+            {/* Manage Groups Button */}
+            <Tooltip title="Manage groups">
+              <IconButton
+                color="inherit"
+                onClick={() => setGroupManagerOpen(true)}
+                aria-label="Manage groups"
+                sx={{ ml: 1 }}
+              >
+                <GroupIcon />
+              </IconButton>
+            </Tooltip>
+
             {/* Settings Button */}
             <IconButton
               color="inherit"
@@ -880,11 +979,14 @@ function App() {
             <ProjectGrid
               projects={filteredAndSortedProjects}
               recentProjects={searchQuery || activeTags.length > 0 ? [] : recentProjects}
+              groups={searchQuery || activeTags.length > 0 ? [] : groups}
               onUpdateProject={handleUpdateProject}
               onLaunchProject={handleLaunchProject}
               onDeleteProject={handleDeleteProject}
               onPinProject={handlePinProject}
               onTagClick={handleTagClick}
+              onToggleGroupCollapse={handleToggleGroupCollapse}
+              onMoveToGroup={handleMoveToGroup}
               loadingOperations={loadingOperations}
             />
           )}
@@ -1002,6 +1104,18 @@ function App() {
         <SettingsDialog
           open={settingsDialogOpen}
           onClose={() => setSettingsDialogOpen(false)}
+          showSnackbar={showSnackbar}
+        />
+
+        {/* Group Manager Dialog */}
+        <GroupManager
+          open={groupManagerOpen}
+          onClose={() => setGroupManagerOpen(false)}
+          groups={groups}
+          onCreateGroup={handleCreateGroup}
+          onUpdateGroup={handleUpdateGroup}
+          onDeleteGroup={handleDeleteGroup}
+          onReorderGroups={handleReorderGroups}
           showSnackbar={showSnackbar}
         />
       </Box>

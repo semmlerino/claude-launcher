@@ -2168,6 +2168,7 @@ mod tests {
             icon: None,
             icon_size: None,
             continue_flag: None,
+            group_id: None,
         };
         db.update_project(project2.id, updates).unwrap();
         
@@ -2192,6 +2193,7 @@ mod tests {
             icon: None,
             icon_size: None,
             continue_flag: None,
+            group_id: None,
         };
         let updated = db.update_project(project.id.clone(), updates).unwrap();
         
