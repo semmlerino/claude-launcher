@@ -36,6 +36,7 @@ import {
   ListItemIcon,
   ListItemText,
   Tooltip,
+  Paper,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -50,6 +51,7 @@ import {
   FileDownload as ExportIcon,
   FileUpload as ImportIcon,
   FolderSpecial as GroupIcon,
+  Folder as FolderIcon,
 } from '@mui/icons-material';
 import ProjectGrid from './components/ProjectGrid';
 import SettingsDialog from './components/SettingsDialog';
@@ -1075,7 +1077,7 @@ function App() {
           </MenuItem>
         </Menu>
 
-        {/* Drag Over Overlay - at root level to cover full viewport */}
+        {/* Drag Over Overlay - Frosted Glass Effect */}
         {dragOver && (
           <Box
             sx={{
@@ -1084,19 +1086,41 @@ function App() {
               left: 0,
               right: 0,
               bottom: 0,
-              backgroundColor: 'rgba(0, 0, 0, 0.5)',
+              backgroundColor: 'rgba(0, 0, 0, 0.4)',
+              backdropFilter: 'blur(8px)',
+              WebkitBackdropFilter: 'blur(8px)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              border: '3px dashed',
-              borderColor: 'primary.main',
               pointerEvents: 'none',
               zIndex: 9999,
             }}
           >
-            <Typography variant="h4" color="primary">
-              Drop folder here
-            </Typography>
+            <Paper
+              elevation={8}
+              sx={{
+                p: 4,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: 2,
+                border: '3px dashed',
+                borderColor: 'primary.main',
+                borderRadius: 3,
+                backgroundColor: theme =>
+                  theme.palette.mode === 'dark'
+                    ? 'rgba(30, 30, 30, 0.95)'
+                    : 'rgba(255, 255, 255, 0.95)',
+              }}
+            >
+              <FolderIcon sx={{ fontSize: 64, color: 'primary.main' }} />
+              <Typography variant="h5" fontWeight="bold">
+                Drop folder here
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Add project to Claude Launcher
+              </Typography>
+            </Paper>
           </Box>
         )}
 
