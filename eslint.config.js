@@ -2,34 +2,50 @@ import js from '@eslint/js';
 import react from 'eslint-plugin-react';
 import reactHooks from 'eslint-plugin-react-hooks';
 import globals from 'globals';
+import vitest from '@vitest/eslint-plugin';
+
+// Shared configuration for both main and test code
+const sharedReactConfig = {
+  plugins: {
+    react,
+    'react-hooks': reactHooks,
+  },
+  settings: {
+    // Explicit version instead of 'detect' - matches package.json react: ^18.3.1
+    react: {
+      version: '18',
+    },
+  },
+};
+
+const jsxParserOptions = {
+  ecmaFeatures: {
+    jsx: true,
+  },
+};
 
 export default [
   // Base JavaScript rules
   js.configs.recommended,
 
-  // Main source files with React (excludes test files via pattern)
+  // Linter hygiene - report unused eslint-disable comments
   {
-    files: ['src/**/*.{js,jsx}', '!src/**/*.test.{js,jsx}', '!src/**/*.spec.{js,jsx}'],
+    linterOptions: {
+      reportUnusedDisableDirectives: 'warn',
+    },
+  },
+
+  // Main source files with React
+  {
+    files: ['src/**/*.{js,jsx}'],
+    ignores: ['src/**/*.test.{js,jsx}', 'src/**/*.spec.{js,jsx}'],
     languageOptions: {
       ecmaVersion: 2024,
       sourceType: 'module',
       globals: globals.browser,
-      parserOptions: {
-        ecmaFeatures: {
-          jsx: true,
-        },
-      },
+      parserOptions: jsxParserOptions,
     },
-    plugins: {
-      react,
-      'react-hooks': reactHooks,
-    },
-    settings: {
-      // Explicit version instead of 'detect' - matches package.json react: ^18.3.1
-      react: {
-        version: '18',
-      },
-    },
+    ...sharedReactConfig,
     rules: {
       // ===== React Hooks Rules (Critical) =====
       'react-hooks/rules-of-hooks': 'error',
@@ -42,12 +58,18 @@ export default [
       'react/jsx-uses-react': 'off',
       // Not needed - automatic JSX transform doesn't require React in scope
       'react/react-in-jsx-scope': 'off',
-      // Disabled since we're not using PropTypes - using TypeScript/inference instead
+      // Disabled - this is a JS-only project without PropTypes or TypeScript
       'react/prop-types': 'off',
+
+      // ===== React Safety Rules =====
+      'react/jsx-key': 'error',
+      'react/no-unknown-property': 'error',
+      'react/jsx-no-duplicate-props': 'error',
+      'react/self-closing-comp': 'warn',
 
       // ===== Code Quality Rules =====
       'no-unused-vars': [
-        'warn',
+        'error',
         {
           varsIgnorePattern: '^_',
           argsIgnorePattern: '^_',
@@ -57,7 +79,7 @@ export default [
       ],
       // Prefer const/let over var
       'no-var': 'error',
-      'prefer-const': 'warn',
+      'prefer-const': 'error',
       // Use === except for null/undefined checks
       'eqeqeq': ['error', 'always', { null: 'ignore' }],
 
@@ -77,46 +99,63 @@ export default [
     },
   },
 
-  // Test files with relaxed rules
+  // Test files with Vitest plugin and relaxed rules
   {
     files: ['src/**/*.test.{js,jsx}', 'src/**/*.spec.{js,jsx}'],
+    plugins: {
+      ...sharedReactConfig.plugins,
+      vitest,
+    },
     languageOptions: {
       ecmaVersion: 2024,
       sourceType: 'module',
       globals: {
         ...globals.browser,
         ...globals.node,
-        describe: 'readonly',
-        it: 'readonly',
-        test: 'readonly',
-        expect: 'readonly',
-        beforeEach: 'readonly',
-        afterEach: 'readonly',
-        beforeAll: 'readonly',
-        afterAll: 'readonly',
-        vi: 'readonly',
+        ...vitest.environments.env.globals,
       },
-      parserOptions: {
-        ecmaFeatures: {
-          jsx: true,
-        },
-      },
+      parserOptions: jsxParserOptions,
     },
-    plugins: {
-      react,
-      'react-hooks': reactHooks,
-    },
-    settings: {
-      react: {
-        version: '18',
-      },
-    },
+    settings: sharedReactConfig.settings,
     rules: {
+      // Vitest recommended rules
+      ...vitest.configs.recommended.rules,
+
+      // React JSX support - enables recognition of JSX usage for no-unused-vars
+      'react/jsx-uses-vars': 'error',
+      'react/jsx-uses-react': 'off',
+      'react/react-in-jsx-scope': 'off',
+
+      // Allow underscore-prefixed unused variables in tests
+      'no-unused-vars': [
+        'error',
+        {
+          varsIgnorePattern: '^_',
+          argsIgnorePattern: '^_',
+          caughtErrorsIgnorePattern: '^_',
+          ignoreRestSiblings: true,
+        },
+      ],
+
       // React Hooks still critical in tests
       'react-hooks/rules-of-hooks': 'error',
-      // More lenient exhaustive-deps in tests (mock setup may not trigger all deps)
+      // Same level as main code - exhaustive-deps helps catch missing test cleanup
       'react-hooks/exhaustive-deps': 'warn',
       // Allow console in tests for debugging
+      'no-console': 'off',
+    },
+  },
+
+  // Configuration files that need linting
+  {
+    files: ['vite.config.js', 'vitest.config.js', 'wdio.conf.js'],
+    languageOptions: {
+      ecmaVersion: 2024,
+      sourceType: 'module',
+      globals: globals.node,
+    },
+    rules: {
+      // Config files often have one-time patterns that don't need strict rules
       'no-console': 'off',
     },
   },
@@ -130,10 +169,7 @@ export default [
       '.github/',
       'coverage/',
       'build/',
-      // Specific config files instead of wildcard
-      'vite.config.js',
-      'vitest.config.js',
-      'wdio.conf.js',
+      // ESLint's own config doesn't need linting
       'eslint.config.js',
     ],
   },

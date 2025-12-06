@@ -71,49 +71,6 @@ describe('App Search Tests - Debug', () => {
     expect(searchInput.value).toBe('Project 2');
   });
 
-  // Skip: Fake timer switching mid-test is fragile and pollutes subsequent tests.
-  // Search/debounce functionality is already tested in App.test.jsx
-  it.skip('should filter projects with fake timers - step by step', async () => {
-    vi.useFakeTimers();
-    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-
-    renderWithTheme(<App />);
-
-    // Wait for initial render with real timers temporarily
-    vi.useRealTimers();
-    await waitFor(() => {
-      expect(screen.getAllByText('Test Project 1').length).toBeGreaterThan(0);
-    });
-    vi.useFakeTimers();
-
-    const searchInput = screen.getByPlaceholderText('Search projects...');
-
-    // Type search query
-    await act(async () => {
-      await user.type(searchInput, 'Project 2');
-    });
-
-    // Verify all projects are still visible before debounce
-    expect(screen.getAllByText('Test Project 1').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Test Project 2').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Test Project 3').length).toBeGreaterThan(0);
-
-    // Advance time for debounce
-    act(() => {
-      vi.advanceTimersByTime(300);
-    });
-
-    // Switch back to real timers for waitFor
-    vi.useRealTimers();
-
-    // Wait for filtering to apply
-    await waitFor(() => {
-      expect(screen.getAllByText('Test Project 2').length).toBeGreaterThan(0);
-      expect(screen.queryAllByText('Test Project 1').length).toBe(0);
-      expect(screen.queryAllByText('Test Project 3').length).toBe(0);
-    });
-  });
-
   it('should filter projects without fake timers - wait for debounce', async () => {
     const user = userEvent.setup();
 
