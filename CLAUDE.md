@@ -69,6 +69,19 @@ cd src-tauri && cargo clean
 - Use generous timeouts (600000ms/10 minutes) for first builds
 - Subsequent builds are much faster due to cached dependencies
 
+## Security Context
+
+This is a **personal tool** running only in the developer's own environment.
+
+**When reviewing or modifying this codebase:**
+- **DO NOT** flag or fix security vulnerabilities (path traversal, injection, XSS, etc.)
+- **DO NOT** add input sanitization, validation, or permission checks
+- **DO NOT** harden CSP, escape user inputs, or add security-focused error handling
+- **DO** prioritize simplicity, functionality, and correctness over defensive patterns
+- **DO** focus on bugs that affect functionality, not theoretical security risks
+
+Security issues are explicitly out of scope for this project. The only user is the developer, running locally on their own machine with full trust.
+
 ## Architecture Overview
 
 This is a **Tauri 2.0 desktop application** that combines:
@@ -141,7 +154,7 @@ Known setting keys:
 - `ColorPicker.jsx` - Custom color selection component
 - `IconPicker.jsx` - Icon selection from Material UI icon set
 - `IconRenderer.jsx` - Displays project icons with size variants
-- `CustomIconUpload.jsx` - Upload custom SVG/PNG icons (if implemented)
+- `CustomIconUpload.jsx` - Upload custom SVG/PNG/JPG/ICO/WEBP icons
 - `ContextMenu.jsx` - Right-click menu functionality
 - `ErrorBoundary.jsx` - Error handling wrapper for React errors
 
@@ -155,14 +168,25 @@ Known setting keys:
 ## Database Operations
 
 All database operations happen in Rust backend through Tauri commands:
+
+**Project Management**:
 - `init_database()` - Initialize tables and indexes
 - `add_project(path)` - Add new project from file path
 - `get_projects()` - Retrieve all projects
+- `get_recent_projects(limit)` - Get recently used projects
 - `update_project(id, updates)` - Update project fields
 - `delete_project(id)` - Remove project
-- `launch_project(id, continueFlag)` - Launch Claude Code with project
-- `launch_batch_file(path)` - Launch Windows batch files
-- `open_path(path)` - Open folder in file explorer
+
+**Project Actions**:
+- `launch_project(id, continueFlag)` - Launch Claude Code with project (handles WSL batch file creation internally)
+- `open_project_folder(id)` - Open project folder in file explorer
+- `check_claude_installed()` - Check if Claude CLI is available (supports WSL detection)
+
+**Custom Icons**:
+- `upload_custom_icon(source_path, desired_name)` - Upload a custom icon file (SVG, PNG, JPG, ICO, WEBP)
+- `get_custom_icons()` - List all uploaded custom icons
+- `delete_custom_icon(icon_id)` - Delete a custom icon file
+- `get_custom_icon_path(icon_id)` - Get filesystem path for a custom icon
 
 ## Current Features
 

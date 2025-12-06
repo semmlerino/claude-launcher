@@ -9,7 +9,7 @@ afterEach(() => {
   cleanup();
 });
 
-// Polyfill crypto for jsdom
+// Polyfill crypto for happy-dom (may not be strictly necessary - kept for compatibility)
 Object.defineProperty(window, 'crypto', {
   value: {
     getRandomValues: function (buffer) {
@@ -74,7 +74,14 @@ vi.mock('@mui/material', () => {
     Box: React.forwardRef(({ children, component, ...props }, ref) => {
       // Filter out MUI-specific props that aren't valid HTML attributes
       const { sx, alignItems, justifyContent, flexDirection, gap, display, ...htmlProps } = props;
-      return React.createElement(component || 'div', { ref, ...htmlProps }, children);
+      // Apply display style from sx if present (for style assertion tests)
+      const style = {};
+      if (sx && sx.display) {
+        style.display = sx.display;
+      } else if (display) {
+        style.display = display;
+      }
+      return React.createElement(component || 'div', { ref, style: Object.keys(style).length ? style : undefined, ...htmlProps }, children);
     }),
     Container: React.forwardRef(({ children, maxWidth, ...props }, ref) => {
       const { sx, ...htmlProps } = props;
@@ -138,8 +145,8 @@ vi.mock('@mui/material', () => {
       ...props
     }) => {
       const { sx, variant, fullWidth, size, ...htmlProps } = props;
-      // Generate an id if not provided to associate with label
-      const fieldId = id || `textfield-${Math.random().toString(36).substr(2, 9)}`;
+      // Generate a deterministic id if not provided to associate with label
+      const fieldId = id || `textfield-${(label || 'unnamed').toString().replace(/\s+/g, '-').toLowerCase()}`;
       const inputProps = {
         ...htmlProps,
         id: fieldId,
@@ -182,7 +189,7 @@ vi.mock('@mui/material', () => {
       React.createElement('label', props, control, label),
     FormGroup: ({ children, ...props }) => React.createElement('div', props, children),
 
-    // Button components - don't render icon elements, just render children text
+    // Button components - render startIcon (may contain loading spinner) and text
     Button: ({ children, startIcon, endIcon, ...props }) => {
       const { sx, variant, color, size, fullWidth, disableElevation, ...htmlProps } = props;
       // Filter children to only include text content, not icon elements
@@ -190,7 +197,8 @@ vi.mock('@mui/material', () => {
         // Keep strings and numbers, skip React elements (which are icons)
         return typeof child === 'string' || typeof child === 'number';
       });
-      return React.createElement('button', htmlProps, filteredChildren);
+      // Include startIcon (may be CircularProgress for loading states)
+      return React.createElement('button', htmlProps, startIcon, filteredChildren, endIcon);
     },
     IconButton: ({ children, ...props }) => {
       const { sx, color, size, edge, ...htmlProps } = props;
@@ -229,10 +237,12 @@ vi.mock('@mui/material', () => {
     List: ({ children, ...props }) => React.createElement('ul', props, children),
     ListItem: ({ children, ...props }) => React.createElement('li', props, children),
     ListItemButton: ({ children, ...props }) => React.createElement('button', props, children),
-    ListItemText: ({ primary, secondary, ...props }) =>
+    ListItemText: ({ primary, secondary, children, ...props }) =>
       React.createElement(
         'div',
         props,
+        // Handle children as primary content (common MUI pattern)
+        children && React.createElement('span', null, children),
         primary && React.createElement('span', null, primary),
         secondary && React.createElement('span', null, secondary),
       ),
@@ -469,10 +479,19 @@ vi.mock('@mui/icons-material', () => {
   };
 });
 
-// Mock Tauri API
+// Mock Tauri API - invoke is configured by mockIPC
+// Use globalThis to share the handler across module scopes
+globalThis.__tauriIpcHandler = null;
+
 vi.mock('@tauri-apps/api/core', () => ({
-  invoke: vi.fn(),
-  convertFileSrc: src => src,
+  invoke: vi.fn((cmd, args) => {
+    if (globalThis.__tauriIpcHandler) {
+      return Promise.resolve(globalThis.__tauriIpcHandler(cmd, args));
+    }
+    console.warn(`Unmocked Tauri command: ${cmd}`);
+    return Promise.resolve(null);
+  }),
+  convertFileSrc: src => `http://asset.localhost/${src}`,
 }));
 
 vi.mock('@tauri-apps/plugin-dialog', () => ({
@@ -562,6 +581,13 @@ vi.mock('@tauri-apps/api/event', () => ({
   },
 }));
 
+vi.mock('@tauri-apps/api/webviewWindow', () => ({
+  getCurrentWebviewWindow: vi.fn(() => ({
+    close: vi.fn(),
+    onFileDropEvent: vi.fn(() => Promise.resolve(() => {})),
+  })),
+}));
+
 // Global test utilities
 globalThis.mockConsoleError = () => {
   const originalError = console.error;
@@ -574,10 +600,15 @@ globalThis.mockConsoleError = () => {
 };
 
 // Mock the imported mocks library from Tauri
+// mockIPC sets the handler, clearMocks resets it
 vi.mock('@tauri-apps/api/mocks', () => ({
-  mockIPC: vi.fn(),
+  mockIPC: vi.fn((handler) => {
+    globalThis.__tauriIpcHandler = handler;
+  }),
   mockWindows: vi.fn(),
-  clearMocks: vi.fn(),
+  clearMocks: vi.fn(() => {
+    globalThis.__tauriIpcHandler = null;
+  }),
 }));
 
 // Mock window.matchMedia
@@ -593,4 +624,39 @@ Object.defineProperty(window, 'matchMedia', {
     removeEventListener: vi.fn(),
     dispatchEvent: vi.fn(),
   })),
+});
+
+// Re-establish mock implementations before each test
+// This is necessary because vitest's mockReset: true clears implementations
+import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
+import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
+import { mockIPC, clearMocks } from '@tauri-apps/api/mocks';
+
+beforeEach(() => {
+  // Re-establish invoke implementation
+  vi.mocked(invoke).mockImplementation((cmd, args) => {
+    if (globalThis.__tauriIpcHandler) {
+      return Promise.resolve(globalThis.__tauriIpcHandler(cmd, args));
+    }
+    console.warn(`Unmocked Tauri command: ${cmd}`);
+    return Promise.resolve(null);
+  });
+
+  // Re-establish mockIPC and clearMocks implementations
+  vi.mocked(mockIPC).mockImplementation((handler) => {
+    globalThis.__tauriIpcHandler = handler;
+  });
+  vi.mocked(clearMocks).mockImplementation(() => {
+    globalThis.__tauriIpcHandler = null;
+  });
+
+  // Re-establish event listener mock
+  vi.mocked(listen).mockImplementation(() => Promise.resolve(() => {}));
+
+  // Re-establish webview window mock
+  vi.mocked(getCurrentWebviewWindow).mockReturnValue({
+    close: vi.fn(),
+    onFileDropEvent: vi.fn(() => Promise.resolve(() => {})),
+  });
 });

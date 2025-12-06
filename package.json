@@ -61,5 +61,8 @@
   "main": "vite.config.js",
   "keywords": [],
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+  "overrides": {
+    "@testing-library/dom": "9.3.4"
+  }
 }

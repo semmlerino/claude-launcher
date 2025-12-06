@@ -40,6 +40,29 @@ struct ProjectUpdate {
     continue_flag: Option<bool>,
 }
 
+// Helper functions for path sanitization
+fn escape_bash_single_quote(s: &str) -> String {
+    // Escape single quotes for bash: ' becomes '\''
+    s.replace("'", "'\\''")
+}
+
+fn escape_batch_string(s: &str) -> String {
+    // Escape batch file metacharacters
+    s.chars().map(|c| match c {
+        '%' => "%%".to_string(),
+        '^' | '&' | '<' | '>' | '|' => format!("^{}", c),
+        _ => c.to_string(),
+    }).collect()
+}
+
+fn validate_path_safe(path: &str) -> Result<(), String> {
+    // Reject paths with control characters or null bytes
+    if path.chars().any(|c| c.is_control() || c == '\0') {
+        return Err("Path contains invalid control characters".to_string());
+    }
+    Ok(())
+}
+
 // Thread-safe wrapper for SQLite connection
 struct AppDatabase {
     conn: Mutex<Connection>,
@@ -47,7 +70,12 @@ struct AppDatabase {
     projects_cache: Mutex<Option<Vec<Project>>>,
 }
 
-// Make AppDatabase safe to share between threads
+// SAFETY: AppDatabase is safe to share between threads because:
+// 1. All fields are wrapped in parking_lot::Mutex, ensuring synchronized access
+// 2. rusqlite::Connection is opened in serialized mode (default), making it thread-safe
+//    when accessed through a mutex (see https://www.sqlite.org/threadsafe.html)
+// 3. The Mutex guarantees only one thread accesses the connection at a time
+// 4. LruCache and Option<Vec<Project>> are Send+Sync when wrapped in Mutex
 unsafe impl Send for AppDatabase {}
 unsafe impl Sync for AppDatabase {}
 
@@ -522,15 +550,20 @@ impl AppDatabase {
     }
     
     fn update_last_used(&self, id: &str) -> Result<(), String> {
-        let conn = self.conn.lock();
-        let now = Utc::now().to_rfc3339();
-        
-        conn.execute(
-            "UPDATE projects SET last_used = ?1 WHERE id = ?2",
-            params![&now, id],
-        )
-        .map_err(|e| e.to_string())?;
-        
+        {
+            let conn = self.conn.lock();
+            let now = Utc::now().to_rfc3339();
+
+            conn.execute(
+                "UPDATE projects SET last_used = ?1 WHERE id = ?2",
+                params![&now, id],
+            )
+            .map_err(|e| e.to_string())?;
+        } // Lock is released here
+
+        // Invalidate cache so next get_all_projects() returns fresh data
+        self.invalidate_projects_cache();
+
         Ok(())
     }
     
@@ -796,14 +829,25 @@ async fn launch_project(
             .unwrap_or_else(|| "claude".to_string());
         let keep_terminal = db.get_setting("keep_terminal_open")?
             .unwrap_or_else(|| "false".to_string()) == "true";
-        
+
+        // Validate paths for security - reject control characters
+        validate_path_safe(&project.path)?;
+        validate_path_safe(&claude_path)?;
+        validate_path_safe(&project.name)?;
+
         // Create temporary batch file for reliable WSL launch
         let temp_dir = env::temp_dir();
         let batch_file = temp_dir.join(format!("claude_launcher_{}.bat", Uuid::new_v4()));
-        
-        // Escape the path for Windows batch file
+
+        // Escape strings for safe interpolation
+        // - Escape project.name for batch file (handles %, ^, &, <, >, |)
+        // - Escape backslashes for Windows path display
+        // - Escape single quotes for wslpath bash command
+        let safe_name = escape_batch_string(&project.name);
         let windows_path = project.path.replace("\\", "\\\\");
-        
+        let safe_windows_path = escape_batch_string(&windows_path);
+        let bash_safe_path = escape_bash_single_quote(&project.path);
+
         // Build batch file content
         let batch_content = format!(
             "@echo off\n\
@@ -814,10 +858,10 @@ async fn launch_project(
              echo.\n\
              wsl -e bash -c \"cd \\\"$(wslpath '{}')\\\" && {} --dangerously-skip-permissions{}{}\"\n\
              {}",
-            project.name,
-            project.name,
-            windows_path,
-            windows_path,
+            safe_name,
+            safe_name,
+            safe_windows_path,
+            bash_safe_path,
             claude_path,
             if continue_flag { " --continue" } else { "" },
             if keep_terminal { " && exec bash" } else { " || echo 'Failed to launch Claude. Exit code: '$?; read -p 'Press Enter to close...'" },
@@ -836,9 +880,10 @@ async fn launch_project(
                         info!("Successfully opened batch file via system handler");
                         
                         // Clean up batch file after a delay
+                        // Use 60 seconds to ensure slow systems have time to execute
                         let batch_file_clone = batch_file.clone();
                         std::thread::spawn(move || {
-                            std::thread::sleep(std::time::Duration::from_secs(5));
+                            std::thread::sleep(std::time::Duration::from_secs(60));
                             let _ = fs::remove_file(&batch_file_clone);
                             info!("Cleaned up batch file: {:?}", batch_file_clone);
                         });

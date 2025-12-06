@@ -117,6 +117,7 @@ function App() {
   const [isInitialized, setIsInitialized] = useState(false);
   const initializingRef = useRef(false);
   const dropZoneRef = useRef(null);
+  const [globalContextMenu, setGlobalContextMenu] = useState(null);
 
   // Create theme based on dark mode preference
   const theme = React.useMemo(
@@ -452,18 +453,20 @@ function App() {
 
       // Optimistic update - immediately update the UI
       updateProjectInState(projectId, updates);
-      showSnackbar('Project updated', 'success');
 
       try {
         await invoke('update_project', { id: projectId, updates });
+        showSnackbar('Project updated', 'success');
       } catch (error) {
-        // Revert to original values on error
+        // Revert to original values on error (including all fields)
         updateProjectInState(projectId, {
           name: originalProject.name,
           tags: originalProject.tags,
           notes: originalProject.notes,
           background_color: originalProject.background_color,
           continue_flag: originalProject.continue_flag,
+          icon: originalProject.icon,
+          icon_size: originalProject.icon_size,
         });
         showSnackbar(`Failed to update project: ${error}`, 'error');
         // Reload from backend to ensure consistency
@@ -564,6 +567,23 @@ function App() {
     }
   }, [showSnackbar]);
 
+  // Global context menu handler
+  const handleGlobalContextMenu = useCallback((event) => {
+    // Don't show global menu if right-clicking on project cards or other interactive elements
+    if (event.target.closest('.project-card') || event.target.closest('[role="menu"]')) {
+      return;
+    }
+    event.preventDefault();
+    setGlobalContextMenu({
+      mouseX: event.clientX,
+      mouseY: event.clientY,
+    });
+  }, []);
+
+  const handleCloseGlobalContextMenu = useCallback(() => {
+    setGlobalContextMenu(null);
+  }, []);
+
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
@@ -573,6 +593,7 @@ function App() {
           display: 'flex',
           flexDirection: 'column',
         }}
+        onContextMenu={handleGlobalContextMenu}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
@@ -831,6 +852,25 @@ function App() {
             {snackbar.message}
           </Alert>
         </Snackbar>
+
+        {/* Global Context Menu */}
+        <Menu
+          open={globalContextMenu !== null}
+          onClose={handleCloseGlobalContextMenu}
+          anchorReference="anchorPosition"
+          anchorPosition={
+            globalContextMenu !== null
+              ? { top: globalContextMenu.mouseY, left: globalContextMenu.mouseX }
+              : undefined
+          }
+        >
+          <MenuItem onClick={() => { handleCloseGlobalContextMenu(); handleCloseWindow(); }}>
+            <ListItemIcon>
+              <CloseIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Close</ListItemText>
+          </MenuItem>
+        </Menu>
       </Box>
     </ThemeProvider>
   );

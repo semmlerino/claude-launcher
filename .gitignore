@@ -115,3 +115,4 @@ test-results.json
 
 # Archive (historical documentation)
 archive/
+.serena/

@@ -47,6 +47,12 @@ const ProjectCard = React.memo(
     const [editedTags, setEditedTags] = useState(project.tags.join(', '));
     const [editedNotes, setEditedNotes] = useState(project.notes);
     const [continueFlag, setContinueFlag] = useState(project.continue_flag || false);
+
+    // Sync local continueFlag state when project prop changes
+    useEffect(() => {
+      setContinueFlag(project.continue_flag || false);
+    }, [project.continue_flag]);
+
     const [isRenaming, setIsRenaming] = useState(false);
     const [renameValue, setRenameValue] = useState(project.name);
     const [contextMenu, setContextMenu] = useState(null);

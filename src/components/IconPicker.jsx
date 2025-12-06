@@ -258,7 +258,7 @@ const IconPicker = ({ open, onClose, onIconSelect, currentIcon, currentIconSize,
 
   return (
     <>
-      <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
+      <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth data-testid="icon-picker">
         <DialogTitle>
           <Box display="flex" alignItems="center" gap={1}>
             <Apps />

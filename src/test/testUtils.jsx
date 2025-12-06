@@ -112,8 +112,3 @@ export const setupCommonMocks = () => {
 
   return mocks;
 };
-
-// Wait for async updates in tests
-export const waitForLoadingToFinish = () => {
-  return new Promise(resolve => setTimeout(resolve, 0));
-};

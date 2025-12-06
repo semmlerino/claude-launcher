@@ -570,7 +570,7 @@ describe('ProjectCard', () => {
       renderWithTheme(<ProjectCard project={defaultProject} {...mockHandlers} />);
 
       // Right click to open context menu
-      const card = screen.getByText('My Test Project').closest('[data-testid]') || 
+      const card = screen.getByText('My Test Project').closest('[data-testid]') ||
                    screen.getByText('My Test Project').closest('div');
       await user.pointer({ keys: '[MouseRight]', target: card });
 
@@ -578,9 +578,15 @@ describe('ProjectCard', () => {
       const changeIconItem = screen.getByText('Change Icon');
       await user.click(changeIconItem);
 
-      // Select an icon
-      const selectCodeIcon = screen.getByText('Select Code Icon');
-      await user.click(selectCodeIcon);
+      // Find the "Code" label and click its parent Paper (sibling before the label)
+      // The DOM structure is: Grid > [Paper, Typography] where Paper contains the icon
+      const codeLabel = screen.getByText('Code');
+      const paperElement = codeLabel.previousElementSibling; // Paper is the sibling before the label
+      await user.click(paperElement);
+
+      // Click Apply to save the selection
+      const applyButton = screen.getByText('Apply');
+      await user.click(applyButton);
 
       // Should call onUpdate with icon
       await waitFor(() => {
@@ -620,7 +626,7 @@ describe('ProjectCard', () => {
       renderWithTheme(<ProjectCard project={defaultProject} {...mockHandlers} />);
 
       // Right click to open context menu
-      const card = screen.getByText('My Test Project').closest('[data-testid]') || 
+      const card = screen.getByText('My Test Project').closest('[data-testid]') ||
                    screen.getByText('My Test Project').closest('div');
       await user.pointer({ keys: '[MouseRight]', target: card });
 
@@ -631,9 +637,9 @@ describe('ProjectCard', () => {
       // Icon picker should be open
       expect(screen.getByTestId('icon-picker')).toBeInTheDocument();
 
-      // Click close button
-      const closeButton = screen.getByText('Close');
-      await user.click(closeButton);
+      // Click Cancel button to close the picker
+      const cancelButton = screen.getByText('Cancel');
+      await user.click(cancelButton);
 
       // Icon picker should be closed
       expect(screen.queryByTestId('icon-picker')).not.toBeInTheDocument();

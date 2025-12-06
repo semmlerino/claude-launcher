@@ -8,8 +8,8 @@ export default defineConfig({
     globals: true,
     environment: 'happy-dom',
     setupFiles: ['./src/test/setup.js'],
-    // Timeout configurations
-    testTimeout: 30000,    // 30 seconds per test
+    // Timeout configurations (use per-test timeout for known slow tests)
+    testTimeout: 10000,    // 10 seconds per test
     hookTimeout: 10000,    // 10 seconds for hooks
     coverage: {
       reporter: ['text', 'json', 'html'],

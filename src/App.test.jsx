@@ -6,34 +6,16 @@ import { mockIPC, clearMocks } from '@tauri-apps/api/mocks';
 import { renderWithTheme, createMockProject, createMockProjects } from './test/testUtils.jsx';
 import App from './App';
 
-// Mock Tauri modules
-vi.mock('@tauri-apps/plugin-dialog', () => ({
-  open: vi.fn(),
-}));
-
-vi.mock('@tauri-apps/plugin-log', () => ({
-  info: vi.fn(),
-  error: vi.fn(),
-  warn: vi.fn(),
-  debug: vi.fn(),
-}));
-
-vi.mock('@tauri-apps/api/event', () => ({
-  listen: vi.fn(() => Promise.resolve(() => {})),
-}));
-
-vi.mock('@tauri-apps/api/webviewWindow', () => ({
-  getCurrentWebviewWindow: vi.fn(() => ({
-    close: vi.fn(),
-  })),
-}));
+// Note: Tauri modules are mocked globally in src/test/setup.js
+// Use mockIPC() for IPC customization, vi.mocked() for plugin overrides
 
 describe('App Component', () => {
   let mockProjects;
   let mockSettings;
 
   beforeEach(() => {
-    vi.clearAllMocks();
+    // Note: vi.clearAllMocks() is handled by vitest config (mockReset: true)
+    // Tauri's clearMocks() is separate and still needed for IPC mock registry
     clearMocks();
 
     // Don't use fake timers by default - let tests opt in
@@ -98,9 +80,7 @@ describe('App Component', () => {
     });
   });
 
-  afterEach(() => {
-    vi.clearAllMocks();
-  });
+  // Note: afterEach cleanup is handled by vitest config (mockReset: true, clearMocks: true, restoreMocks: true)
 
   describe('Initialization Flow', () => {
     it('should initialize database, load projects, settings, and check Claude installation', async () => {
@@ -234,9 +214,10 @@ describe('App Component', () => {
 
       renderWithTheme(<App />);
 
-      // Wait for projects to load
+      // Wait for projects to load (use getAllByText - projects appear in both Recent and All sections)
       await waitFor(() => {
-        expect(screen.getByText('Test Project 1')).toBeInTheDocument();
+        const project1Elements = screen.getAllByText('Test Project 1');
+        expect(project1Elements.length).toBeGreaterThan(0);
       });
 
       const searchInput = screen.getByPlaceholderText('Search projects...');
@@ -247,18 +228,16 @@ describe('App Component', () => {
       });
 
       // Projects should still all be visible immediately (before debounce)
-      expect(screen.getByText('Test Project 1')).toBeInTheDocument();
-      expect(screen.getByText('Test Project 2')).toBeInTheDocument();
-      expect(screen.getByText('Test Project 3')).toBeInTheDocument();
+      expect(screen.getAllByText('Test Project 1').length).toBeGreaterThan(0);
+      expect(screen.getAllByText('Test Project 2').length).toBeGreaterThan(0);
+      expect(screen.getAllByText('Test Project 3').length).toBeGreaterThan(0);
 
       // Wait for filtering
       await waitFor(() => {
-        expect(screen.getByText('Test Project 2')).toBeInTheDocument();
-        expect(screen.queryByText('Test Project 1')).not.toBeInTheDocument();
-        expect(screen.queryByText('Test Project 3')).not.toBeInTheDocument();
+        expect(screen.getAllByText('Test Project 2').length).toBeGreaterThan(0);
+        expect(screen.queryAllByText('Test Project 1').length).toBe(0);
+        expect(screen.queryAllByText('Test Project 3').length).toBe(0);
       });
-
-      vi.useRealTimers();
     });
 
     it('should search across multiple fields', async () => {
@@ -272,8 +251,9 @@ describe('App Component', () => {
 
       renderWithTheme(<App />);
 
+      // Wait for projects to load (use getAllByText - projects appear in both Recent and All sections)
       await waitFor(() => {
-        expect(screen.getByText('Alpha')).toBeInTheDocument();
+        expect(screen.getAllByText('Alpha').length).toBeGreaterThan(0);
       });
 
       const searchInput = screen.getByPlaceholderText('Search projects...');
@@ -284,11 +264,9 @@ describe('App Component', () => {
 
       // Wait for filtering
       await waitFor(() => {
-        expect(screen.getByText('Alpha')).toBeInTheDocument();
-        expect(screen.queryByText('Beta')).not.toBeInTheDocument();
+        expect(screen.getAllByText('Alpha').length).toBeGreaterThan(0);
+        expect(screen.queryAllByText('Beta').length).toBe(0);
       });
-
-      vi.useRealTimers();
     });
   });
 
@@ -538,7 +516,7 @@ describe('App Component', () => {
       renderWithTheme(<App />);
 
       await waitFor(() => {
-        expect(screen.getByText('Test Project 1')).toBeInTheDocument();
+        expect(screen.getAllByText('Test Project 1').length).toBeGreaterThan(0);
       });
 
       // Change sort
@@ -583,7 +561,7 @@ describe('App Component', () => {
       renderWithTheme(<App />);
 
       await waitFor(() => {
-        expect(screen.getByText('Test Project 1')).toBeInTheDocument();
+        expect(screen.getAllByText('Test Project 1').length).toBeGreaterThan(0);
       });
 
       // Click theme toggle button
@@ -635,7 +613,7 @@ describe('App Component', () => {
       renderWithTheme(<App />);
 
       await waitFor(() => {
-        expect(screen.getByText('Test Project 1')).toBeInTheDocument();
+        expect(screen.getAllByText('Test Project 1').length).toBeGreaterThan(0);
       });
 
       // Override mock for add_project
@@ -707,7 +685,7 @@ describe('App Component', () => {
       renderWithTheme(<App />);
 
       await waitFor(() => {
-        expect(screen.getByText('Test Project 1')).toBeInTheDocument();
+        expect(screen.getAllByText('Test Project 1').length).toBeGreaterThan(0);
       });
 
       // Mock dialog
@@ -731,7 +709,7 @@ describe('App Component', () => {
       renderWithTheme(<App />);
 
       await waitFor(() => {
-        expect(screen.getByText('Test Project 1')).toBeInTheDocument();
+        expect(screen.getAllByText('Test Project 1').length).toBeGreaterThan(0);
       });
 
       // Mock slow dialog
@@ -758,7 +736,7 @@ describe('App Component', () => {
       renderWithTheme(<App />);
 
       await waitFor(() => {
-        expect(screen.getByText('Test Project 1')).toBeInTheDocument();
+        expect(screen.getAllByText('Test Project 1').length).toBeGreaterThan(0);
       });
 
       // Find delete button for first project
@@ -778,7 +756,7 @@ describe('App Component', () => {
       renderWithTheme(<App />);
 
       await waitFor(() => {
-        expect(screen.getByText('Test Project 1')).toBeInTheDocument();
+        expect(screen.getAllByText('Test Project 1').length).toBeGreaterThan(0);
       });
 
       // Click delete on first project

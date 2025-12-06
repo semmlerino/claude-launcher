@@ -4,27 +4,8 @@ import userEvent from '@testing-library/user-event';
 import { mockIPC, clearMocks } from '@tauri-apps/api/mocks';
 import App from '../../App';
 
-// Mock other Tauri modules
-vi.mock('@tauri-apps/plugin-dialog', () => ({
-  open: vi.fn(),
-}));
-
-vi.mock('@tauri-apps/plugin-log', () => ({
-  info: vi.fn(),
-  error: vi.fn(),
-  warn: vi.fn(),
-  debug: vi.fn(),
-}));
-
-vi.mock('@tauri-apps/api/event', () => ({
-  listen: vi.fn(() => Promise.resolve(() => {})),
-}));
-
-vi.mock('@tauri-apps/api/webviewWindow', () => ({
-  getCurrentWebviewWindow: vi.fn(() => ({
-    onFileDropEvent: vi.fn(() => Promise.resolve(() => {})),
-  })),
-}));
+// Note: Tauri modules are mocked globally in src/test/setup.js
+// Use mockIPC() for IPC customization, vi.mocked() for plugin overrides
 
 // Sample project data for testing
 const mockProjects = [
@@ -52,15 +33,19 @@ describe('App Integration Tests', () => {
   let user;
 
   // Helper to find project by name (handles text split across elements)
+  // Projects may appear in both "Recent Projects" and "All Projects" sections,
+  // so we use queryAllByText to handle multiple matches
   const findProjectByName = (name) => {
-    // Look for the project name as an h6 element (Typography variant h6)
-    return screen.queryByText((content, element) => {
+    // Look for the project name as an h2 element (Typography variant h6 with component="h2")
+    const matches = screen.queryAllByText((content, element) => {
       if (!element) return false;
-      // Check if this is an h6 or part of Typography that renders as h6
-      const isH6 = element.tagName === 'H6';
+      // Check if this is an h2 (the component prop overrides the variant for rendering)
+      const isH2 = element.tagName === 'H2';
       // Also check if text exactly matches
-      return content === name && isH6;
+      return content === name && isH2;
     });
+    // Return the first match (or null if none found)
+    return matches.length > 0 ? matches[0] : null;
   };
 
   beforeEach(() => {
@@ -243,7 +228,7 @@ describe('App Integration Tests', () => {
 
       // Find and click delete button on Project 1 specifically
       const project1Title = findProjectByName('Project 1');
-      const project1Card = project1Title.closest('div');  // Find closest parent card
+      const project1Card = project1Title.closest('[data-selected]');  // Find the Card element (has data-selected attr)
       const deleteButton = within(project1Card).getByRole('button', { name: /delete project/i });
       await act(async () => {
         await user.click(deleteButton);
@@ -303,7 +288,7 @@ describe('App Integration Tests', () => {
 
       // Pin the first project by clicking the star button
       const project1Title = findProjectByName('Project 1');
-      const project1Card = project1Title.closest('div');  // Find closest parent card
+      const project1Card = project1Title.closest('[data-selected]');  // Find the Card element (has data-selected attr)
       const starButton = within(project1Card).getByRole('button', { name: /pin project/i });
       await act(async () => {
         await user.click(starButton);
@@ -506,7 +491,7 @@ describe('App Integration Tests', () => {
 
       // Click on launch button for Project 1 specifically
       const project1Title = findProjectByName('Project 1');
-      const project1Card = project1Title.closest('div');  // Find closest parent card
+      const project1Card = project1Title.closest('[data-selected]');  // Find the Card element (has data-selected attr)
       const launchButton = within(project1Card).getByRole('button', { name: /launch/i });
       await act(async () => {
         await user.click(launchButton);
