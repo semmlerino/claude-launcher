@@ -112,3 +112,6 @@ test-results.json
 !pnpm-lock.yaml
 !yarn.lock
 !Cargo.lock
+
+# Archive (historical documentation)
+archive/
