@@ -33,6 +33,7 @@ const SettingsDialog = ({ open, onClose, showSnackbar }) => {
   const [claudeExecutablePath, setClaudeExecutablePath] = useState(DEFAULT_CLAUDE_PATH);
   const [keepTerminalOpen, setKeepTerminalOpen] = useState(false);
   const [wslLaunchMethod, setWslLaunchMethod] = useState('batch');
+  const [hotkeyEnabled, setHotkeyEnabled] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState(null);
 
@@ -47,16 +48,18 @@ const SettingsDialog = ({ open, onClose, showSnackbar }) => {
     setLoading(true);
     setLoadError(null);
     try {
-      const [wsl, path, keepOpen, method] = await Promise.all([
+      const [wsl, path, keepOpen, method, hotkey] = await Promise.all([
         invoke('get_setting', { key: 'use_wsl' }),
         invoke('get_setting', { key: 'claude_executable_path' }),
         invoke('get_setting', { key: 'keep_terminal_open' }),
         invoke('get_setting', { key: 'wsl_launch_method' }),
+        invoke('get_setting', { key: 'hotkey_enabled' }),
       ]);
       setUseWsl(wsl !== 'false'); // default true
       setClaudeExecutablePath(path || DEFAULT_CLAUDE_PATH);
       setKeepTerminalOpen(keepOpen === 'true');
       setWslLaunchMethod(method || 'batch');
+      setHotkeyEnabled(hotkey === 'true');
     } catch (error) {
       console.error('Failed to load settings:', error);
       setLoadError('Failed to load settings');
@@ -89,7 +92,32 @@ const SettingsDialog = ({ open, onClose, showSnackbar }) => {
     setClaudeExecutablePath(DEFAULT_CLAUDE_PATH);
     setKeepTerminalOpen(false);
     setWslLaunchMethod('batch');
+    setHotkeyEnabled(false);
     setLoadError(null);
+  };
+
+  const handleHotkeyToggle = async (enabled) => {
+    try {
+      await invoke('toggle_global_hotkey', { enabled });
+      setHotkeyEnabled(enabled);
+      showSnackbar(
+        `Global hotkey ${enabled ? 'enabled' : 'disabled'}`,
+        'success'
+      );
+    } catch (error) {
+      console.error('Failed to toggle hotkey:', error);
+      showSnackbar(`Failed to toggle hotkey: ${error}`, 'error');
+    }
+  };
+
+  const handleResetWindow = async () => {
+    try {
+      await invoke('reset_window_state');
+      showSnackbar('Window position reset to defaults', 'success');
+    } catch (error) {
+      console.error('Failed to reset window:', error);
+      showSnackbar(`Failed to reset window: ${error}`, 'error');
+    }
   };
 
   return (
@@ -172,6 +200,44 @@ const SettingsDialog = ({ open, onClose, showSnackbar }) => {
             />
           </Box>
         )}
+
+        <Typography variant="subtitle2" gutterBottom sx={{ fontWeight: 'bold', mt: 3 }}>
+          Global Hotkey
+        </Typography>
+
+        <FormControlLabel
+          control={
+            <Switch
+              checked={hotkeyEnabled}
+              onChange={e => handleHotkeyToggle(e.target.checked)}
+              disabled={loading}
+            />
+          }
+          label="Enable Ctrl+Shift+Space to summon window"
+        />
+
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', ml: 2, mt: 1 }}>
+          Press Ctrl+Shift+Space from any application to bring launcher window to focus.
+          On macOS, use Cmd+Shift+Space.
+        </Typography>
+
+        <Typography variant="subtitle2" gutterBottom sx={{ fontWeight: 'bold', mt: 3 }}>
+          Window Position
+        </Typography>
+
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          Window size and position are automatically saved. If the window appears off-screen
+          after monitor changes, reset to defaults.
+        </Typography>
+
+        <Button
+          variant="outlined"
+          onClick={handleResetWindow}
+          disabled={loading}
+          fullWidth
+        >
+          Reset Window Position
+        </Button>
       </DialogContent>
       <DialogActions>
         <Button onClick={handleReset} disabled={loading}>

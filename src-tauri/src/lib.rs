@@ -8,6 +8,7 @@ use std::env;
 use tauri::{Manager, State};
 use tauri_plugin_shell::ShellExt;
 use tauri_plugin_opener::OpenerExt;
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Code, Modifiers, Shortcut, ShortcutState};
 use uuid::Uuid;
 use parking_lot::Mutex;
 use lru::LruCache;
@@ -91,6 +92,38 @@ fn validate_path_safe(path: &str) -> Result<(), String> {
         return Err("Path contains invalid control characters".to_string());
     }
     Ok(())
+}
+
+/// Clean up orphaned batch files from previous sessions.
+/// Called at app startup to remove any claude_launcher_*.bat files older than 1 hour.
+fn cleanup_orphan_batch_files() {
+    let temp_dir = std::env::temp_dir();
+    let pattern = "claude_launcher_";
+    let max_age = std::time::Duration::from_secs(3600); // 1 hour
+
+    match fs::read_dir(&temp_dir) {
+        Ok(entries) => {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                    if name.starts_with(pattern) && name.ends_with(".bat") {
+                        // Check file age
+                        if let Ok(metadata) = fs::metadata(&path) {
+                            if let Ok(modified) = metadata.modified() {
+                                if modified.elapsed().unwrap_or_default() > max_age {
+                                    match fs::remove_file(&path) {
+                                        Ok(_) => info!("Cleaned orphan batch file: {:?}", path),
+                                        Err(e) => debug!("Could not clean orphan file {:?}: {}", path, e),
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Err(e) => debug!("Could not read temp directory for cleanup: {}", e),
+    }
 }
 
 // Helper to parse JSON tags with logging on failure
@@ -864,12 +897,26 @@ fn launch_wsl_batch(
                 Ok(_) => {
                     info!("Successfully opened batch file via system handler");
 
-                    // Clean up batch file after a delay
+                    // Clean up batch file after a delay with retry logic for Windows file locking
                     let batch_file_clone = batch_file.clone();
                     std::thread::spawn(move || {
-                        std::thread::sleep(std::time::Duration::from_secs(60));
-                        let _ = fs::remove_file(&batch_file_clone);
-                        info!("Cleaned up batch file: {:?}", batch_file_clone);
+                        let delays = [60, 30, 30, 60]; // Total: 3 minutes of retries
+                        for (i, delay) in delays.iter().enumerate() {
+                            std::thread::sleep(std::time::Duration::from_secs(*delay));
+                            match fs::remove_file(&batch_file_clone) {
+                                Ok(_) => {
+                                    info!("Cleaned up batch file: {:?}", batch_file_clone);
+                                    return;
+                                }
+                                Err(e) if i < delays.len() - 1 => {
+                                    debug!("Cleanup attempt {} failed, retrying: {}", i + 1, e);
+                                }
+                                Err(e) => {
+                                    warn!("Failed to clean up batch file {:?} after {} attempts: {}",
+                                          batch_file_clone, delays.len(), e);
+                                }
+                            }
+                        }
                     });
 
                     Ok(serde_json::json!({
@@ -893,6 +940,10 @@ fn launch_wsl_batch(
 #[tauri::command]
 async fn init_database(_db: State<'_, AppDatabase>) -> Result<serde_json::Value, String> {
     // Database is already initialized in AppDatabase::new()
+
+    // Clean up any orphaned batch files from previous sessions
+    cleanup_orphan_batch_files();
+
     Ok(serde_json::json!({
         "message": "Database initialized"
     }))
@@ -1202,9 +1253,73 @@ async fn get_setting(key: String, db: State<'_, AppDatabase>) -> Result<Option<S
     db.get_setting(&key)
 }
 
-#[tauri::command] 
+#[tauri::command]
 async fn set_setting(key: String, value: String, db: State<'_, AppDatabase>) -> Result<(), String> {
     db.set_setting(&key, &value)
+}
+
+#[tauri::command]
+async fn toggle_global_hotkey(
+    app_handle: tauri::AppHandle,
+    db: State<'_, AppDatabase>,
+    enabled: bool,
+) -> Result<serde_json::Value, String> {
+    if enabled {
+        // Register Ctrl+Shift+Space
+        let modifiers = Modifiers::CONTROL | Modifiers::SHIFT;
+        let shortcut = Shortcut::new(Some(modifiers), Code::Space);
+
+        let app = app_handle.clone();
+        app_handle
+            .global_shortcut()
+            .on_shortcut(shortcut, move |_app, _shortcut, event| {
+                if event.state == ShortcutState::Pressed {
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                        let _ = window.unminimize();
+                    }
+                }
+            })
+            .map_err(|e| format!("Failed to register hotkey: {}", e))?;
+
+        db.set_setting("hotkey_enabled", "true")?;
+        Ok(serde_json::json!({"success": true, "message": "Hotkey enabled"}))
+    } else {
+        // Unregister
+        let modifiers = Modifiers::CONTROL | Modifiers::SHIFT;
+        let shortcut = Shortcut::new(Some(modifiers), Code::Space);
+
+        app_handle
+            .global_shortcut()
+            .unregister(shortcut)
+            .map_err(|e| format!("Failed to unregister: {}", e))?;
+
+        db.set_setting("hotkey_enabled", "false")?;
+        Ok(serde_json::json!({"success": true, "message": "Hotkey disabled"}))
+    }
+}
+
+#[tauri::command]
+async fn reset_window_state(app_handle: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    let window = app_handle
+        .get_webview_window("main")
+        .ok_or("Window not found")?;
+
+    window.set_size(tauri::Size::Logical(tauri::LogicalSize {
+        width: 1200.0,
+        height: 800.0,
+    }))
+    .map_err(|e| format!("Failed to set size: {}", e))?;
+
+    window.center()
+        .map_err(|e| format!("Failed to center: {}", e))?;
+
+    window.unmaximize()
+        .map_err(|e| format!("Failed to unmaximize: {}", e))?;
+
+    // Window state is saved automatically by the plugin
+    Ok(serde_json::json!({"success": true}))
 }
 
 #[tauri::command]
@@ -1437,6 +1552,8 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_window_state::Builder::default().build())
         .setup(|app| {
             info!("Running Tauri setup hook...");
             info!("App name: {}", app.config().product_name.as_ref().unwrap_or(&"Unknown".to_string()));
@@ -1483,7 +1600,30 @@ pub fn run() {
                     }
                 }
             }
-            
+
+            // Auto-register hotkey if enabled
+            let db_state = app.state::<AppDatabase>();
+            if let Ok(Some(enabled)) = db_state.get_setting("hotkey_enabled") {
+                if enabled == "true" {
+                    let modifiers = Modifiers::CONTROL | Modifiers::SHIFT;
+                    let shortcut = Shortcut::new(Some(modifiers), Code::Space);
+                    let app_handle = app.handle().clone();
+
+                    let _ = app.global_shortcut().on_shortcut(
+                        shortcut,
+                        move |_app, _shortcut, event| {
+                            if event.state == ShortcutState::Pressed {
+                                if let Some(window) = app_handle.get_webview_window("main") {
+                                    let _ = window.show();
+                                    let _ = window.set_focus();
+                                    let _ = window.unminimize();
+                                }
+                            }
+                        }
+                    );
+                }
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -1498,6 +1638,8 @@ pub fn run() {
             check_claude_installed,
             get_setting,
             set_setting,
+            toggle_global_hotkey,
+            reset_window_state,
             upload_custom_icon,
             get_custom_icons,
             delete_custom_icon,

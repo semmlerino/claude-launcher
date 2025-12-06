@@ -6,23 +6,30 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is a personal tool, not enterprise-grade. Keep things simple and be pragmatic. Avoid over-engineering, unnecessary abstractions, or "best practices" that add complexity without clear benefit.
 
-## ⚠️ IMPORTANT: Windows Compilation Required
+## ⚠️ IMPORTANT: Always Build Windows .exe
 
-**ALWAYS compile for Windows when building production releases:**
+**After ANY code changes, ALWAYS build the Windows .exe by default:**
 
 ```bash
-# For Windows .exe from WSL (RECOMMENDED)
-export PATH="$HOME/.cargo/bin:$PATH" && rustup target add x86_64-pc-windows-gnu
+# DEFAULT BUILD COMMAND - Use this after every code change
 export PATH="$HOME/.cargo/bin:$PATH" && npm run tauri build -- --target x86_64-pc-windows-gnu --no-bundle
+```
 
-# For production builds in WSL environment (Linux binary for WSL)
-export PATH="$HOME/.cargo/bin:$PATH" && npm run tauri build
+Output: `src-tauri/target/x86_64-pc-windows-gnu/release/claude-launcher.exe`
 
-# For production builds on native Windows (requires MSVC toolchain)
+**Other build options (use only when specifically needed):**
+```bash
+# First-time setup only (add Windows target)
+export PATH="$HOME/.cargo/bin:$PATH" && rustup target add x86_64-pc-windows-gnu
+
+# Dev mode for testing (Linux binary, faster iteration)
+export PATH="$HOME/.cargo/bin:$PATH" && npm run tauri dev
+
+# Native Windows build (requires MSVC toolchain on Windows)
 npm run tauri build -- --target x86_64-pc-windows-msvc
 ```
 
-This application is designed specifically for Windows with WSL integration, Windows-specific batch file launching, and Windows file system paths. The cross-compiled Windows .exe will be created in `src-tauri/target/x86_64-pc-windows-gnu/release/claude-launcher.exe`.
+This application is designed specifically for Windows with WSL integration, Windows-specific batch file launching, and Windows file system paths.
 
 ## Essential Commands
 
