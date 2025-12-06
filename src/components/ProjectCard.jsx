@@ -380,10 +380,11 @@ const ProjectCard = React.memo(
                         onUpdate(project.id, { continue_flag: newValue });
                       }}
                       size="small"
+                      sx={{ p: 0.5 }}
                     />
                   }
                   label="Continue"
-                  sx={{ mr: 0 }}
+                  sx={{ mr: 2 }}
                 />
                 <FormControlLabel
                   control={
@@ -395,6 +396,7 @@ const ProjectCard = React.memo(
                         onUpdate(project.id, { resume_flag: newValue });
                       }}
                       size="small"
+                      sx={{ p: 0.5 }}
                     />
                   }
                   label="Resume"
