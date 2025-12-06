@@ -27,6 +27,24 @@ struct Project {
     icon: Option<String>,
     icon_size: Option<u32>,
     continue_flag: bool,
+    group_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ProjectGroup {
+    id: String,
+    name: String,
+    color: Option<String>,
+    collapsed: bool,
+    order: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct GroupUpdate {
+    name: Option<String>,
+    color: Option<String>,
+    collapsed: Option<bool>,
+    order: Option<i32>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -39,6 +57,7 @@ struct ProjectUpdate {
     icon: Option<String>,
     icon_size: Option<u32>,
     continue_flag: Option<bool>,
+    group_id: Option<String>,
 }
 
 // Export/Import structures
@@ -48,6 +67,8 @@ struct ExportData {
     exported_at: String,
     application: String,
     projects: Vec<ExportedProject>,
+    #[serde(default)]
+    groups: Vec<ProjectGroup>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -61,6 +82,8 @@ struct ExportedProject {
     icon: Option<String>,
     icon_size: Option<u32>,
     continue_flag: bool,
+    #[serde(default)]
+    group_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -306,7 +329,7 @@ impl AppDatabase {
                 |row| row.get(0),
             )
             .unwrap_or(false);
-        
+
         if !has_icon_size {
             info!("Adding icon_size column to projects table");
             match conn.execute(
@@ -317,7 +340,36 @@ impl AppDatabase {
                 Err(e) => warn!("Could not add icon_size column: {}", e),
             }
         }
-        
+
+        // Add group_id column if it doesn't exist (for existing databases)
+        let has_group_id: bool = conn
+            .query_row(
+                "SELECT COUNT(*) > 0 FROM pragma_table_info('projects') WHERE name = 'group_id'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(false);
+
+        if !has_group_id {
+            info!("Adding group_id column to projects table");
+            match conn.execute(
+                "ALTER TABLE projects ADD COLUMN group_id TEXT",
+                [],
+            ) {
+                Ok(_) => info!("Successfully added group_id column"),
+                Err(e) => warn!("Could not add group_id column: {}", e),
+            }
+
+            // Create index for efficient group queries
+            match conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_projects_group_id ON projects(group_id)",
+                [],
+            ) {
+                Ok(_) => info!("Successfully created group_id index"),
+                Err(e) => warn!("Could not create group_id index: {}", e),
+            }
+        }
+
         Ok(AppDatabase {
             conn: Mutex::new(conn),
             settings_cache: Mutex::new(LruCache::new(NonZeroUsize::new(100).unwrap())),
@@ -359,8 +411,8 @@ impl AppDatabase {
         
         // Try to insert the project
         let result = conn.execute(
-            "INSERT INTO projects (id, path, name, tags, notes, pinned, last_used, background_color, icon, icon_size, continue_flag) 
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            "INSERT INTO projects (id, path, name, tags, notes, pinned, last_used, background_color, icon, icon_size, continue_flag, group_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
             params![
                 &id,
                 &path,
@@ -372,10 +424,11 @@ impl AppDatabase {
                 Option::<String>::None,
                 Option::<String>::None,
                 Option::<u32>::None,
-                false
+                false,
+                Option::<String>::None
             ],
         );
-        
+
         match result {
             Ok(_) => {
                 // Successfully inserted - invalidate cache
@@ -392,14 +445,15 @@ impl AppDatabase {
                     icon: None,
                     icon_size: None,
                     continue_flag: false,
+                    group_id: None,
                 })
             }
-            Err(rusqlite::Error::SqliteFailure(error, _)) 
+            Err(rusqlite::Error::SqliteFailure(error, _))
                 if error.code == rusqlite::ErrorCode::ConstraintViolation => {
                 // Project already exists, fetch and return it
                 info!("Project already exists at path: {}, returning existing project", path);
                 conn.query_row(
-                    "SELECT id, path, name, tags, notes, pinned, last_used, background_color, icon, icon_size, continue_flag
+                    "SELECT id, path, name, tags, notes, pinned, last_used, background_color, icon, icon_size, continue_flag, group_id
                      FROM projects WHERE path = ?1",
                     params![&path],
                     |row| {
@@ -417,6 +471,7 @@ impl AppDatabase {
                             icon: row.get(8)?,
                             icon_size: row.get(9)?,
                             continue_flag: row.get(10)?,
+                            group_id: row.get(11)?,
                         })
                     },
                 )
@@ -440,15 +495,15 @@ impl AppDatabase {
         
         // Cache miss, query database
         let conn = self.conn.lock();
-        
+
         let mut stmt = conn
             .prepare(
-                "SELECT id, path, name, tags, notes, pinned, last_used, background_color, icon, icon_size, continue_flag
-                 FROM projects 
+                "SELECT id, path, name, tags, notes, pinned, last_used, background_color, icon, icon_size, continue_flag, group_id
+                 FROM projects
                  ORDER BY pinned DESC, last_used DESC NULLS LAST",
             )
             .map_err(|e| e.to_string())?;
-        
+
         let projects = stmt
             .query_map([], |row| {
                 let id: String = row.get(0)?;
@@ -465,6 +520,7 @@ impl AppDatabase {
                     icon: row.get(8)?,
                     icon_size: row.get(9)?,
                     continue_flag: row.get(10)?,
+                    group_id: row.get(11)?,
                 })
             })
             .map_err(|e| e.to_string())?
@@ -487,17 +543,17 @@ impl AppDatabase {
     
     fn get_recent_projects(&self, limit: usize) -> Result<Vec<Project>, String> {
         let conn = self.conn.lock();
-        
+
         let mut stmt = conn
             .prepare(
-                "SELECT id, path, name, tags, notes, pinned, last_used, background_color, icon, icon_size, continue_flag
-                 FROM projects 
+                "SELECT id, path, name, tags, notes, pinned, last_used, background_color, icon, icon_size, continue_flag, group_id
+                 FROM projects
                  WHERE last_used IS NOT NULL
                  ORDER BY last_used DESC
                  LIMIT ?1",
             )
             .map_err(|e| e.to_string())?;
-        
+
         let projects = stmt
             .query_map(params![limit], |row| {
                 let id: String = row.get(0)?;
@@ -514,6 +570,7 @@ impl AppDatabase {
                     icon: row.get(8)?,
                     icon_size: row.get(9)?,
                     continue_flag: row.get(10)?,
+                    group_id: row.get(11)?,
                 })
             })
             .map_err(|e| e.to_string())?
@@ -573,7 +630,17 @@ impl AppDatabase {
                 sql_parts.push("continue_flag = ?");
                 params.push(Box::new(*continue_flag));
             }
-            
+
+            if let Some(group_id) = &updates.group_id {
+                sql_parts.push("group_id = ?");
+                // Empty string means remove from group (set to NULL)
+                if group_id.is_empty() {
+                    params.push(Box::new(Option::<String>::None));
+                } else {
+                    params.push(Box::new(Some(group_id.clone())));
+                }
+            }
+
             if sql_parts.is_empty() {
                 return Err("No updates provided".to_string());
             }
@@ -602,7 +669,7 @@ impl AppDatabase {
         let conn = self.conn.lock();
 
         conn.query_row(
-            "SELECT id, path, name, tags, notes, pinned, last_used, background_color, icon, icon_size, continue_flag
+            "SELECT id, path, name, tags, notes, pinned, last_used, background_color, icon, icon_size, continue_flag, group_id
              FROM projects WHERE id = ?1",
             params![id],
             |row| {
@@ -620,6 +687,7 @@ impl AppDatabase {
                     icon: row.get(8)?,
                     icon_size: row.get(9)?,
                     continue_flag: row.get(10)?,
+                    group_id: row.get(11)?,
                 })
             },
         )
@@ -844,6 +912,91 @@ impl AppDatabase {
         }
 
         Ok(())
+    }
+
+    // Group management methods
+    fn get_groups(&self) -> Result<Vec<ProjectGroup>, String> {
+        let groups_json = self.get_setting("groups_data")?.unwrap_or_else(|| "[]".to_string());
+        serde_json::from_str(&groups_json).map_err(|e| format!("Failed to parse groups: {}", e))
+    }
+
+    fn save_groups(&self, groups: &[ProjectGroup]) -> Result<(), String> {
+        let json = serde_json::to_string(groups)
+            .map_err(|e| format!("Failed to serialize groups: {}", e))?;
+        self.set_setting("groups_data", &json)
+    }
+
+    fn create_group(&self, name: String, color: Option<String>) -> Result<ProjectGroup, String> {
+        let mut groups = self.get_groups()?;
+        let new_group = ProjectGroup {
+            id: Uuid::new_v4().to_string(),
+            name,
+            color,
+            collapsed: false,
+            order: groups.len() as i32,
+        };
+        groups.push(new_group.clone());
+        self.save_groups(&groups)?;
+        Ok(new_group)
+    }
+
+    fn update_group(&self, id: String, updates: GroupUpdate) -> Result<ProjectGroup, String> {
+        let mut groups = self.get_groups()?;
+        let group = groups.iter_mut()
+            .find(|g| g.id == id)
+            .ok_or_else(|| "Group not found".to_string())?;
+
+        if let Some(name) = updates.name {
+            group.name = name;
+        }
+        if let Some(color) = updates.color {
+            group.color = Some(color);
+        }
+        if let Some(collapsed) = updates.collapsed {
+            group.collapsed = collapsed;
+        }
+        if let Some(order) = updates.order {
+            group.order = order;
+        }
+
+        let updated = group.clone();
+        self.save_groups(&groups)?;
+        Ok(updated)
+    }
+
+    fn delete_group(&self, id: &str) -> Result<(), String> {
+        let mut groups = self.get_groups()?;
+        groups.retain(|g| g.id != id);
+        self.save_groups(&groups)?;
+
+        // Clear group_id from all projects that were in this group
+        {
+            let conn = self.conn.lock();
+            conn.execute(
+                "UPDATE projects SET group_id = NULL WHERE group_id = ?1",
+                params![id],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+        self.invalidate_projects_cache();
+
+        Ok(())
+    }
+
+    fn reorder_groups(&self, group_ids: Vec<String>) -> Result<Vec<ProjectGroup>, String> {
+        let mut groups = self.get_groups()?;
+
+        // Update order based on position in group_ids
+        for (index, group_id) in group_ids.iter().enumerate() {
+            if let Some(group) = groups.iter_mut().find(|g| &g.id == group_id) {
+                group.order = index as i32;
+            }
+        }
+
+        // Sort by order
+        groups.sort_by_key(|g| g.order);
+        self.save_groups(&groups)?;
+        Ok(groups)
     }
 }
 
@@ -1410,8 +1563,10 @@ async fn export_projects(db: State<'_, AppDatabase>, file_path: String) -> Resul
 
     let projects = db.get_all_projects()?;
 
+    let groups = db.get_groups()?;
+
     let export_data = ExportData {
-        version: 1,
+        version: 2,  // Bumped version for groups support
         exported_at: chrono::Utc::now().to_rfc3339(),
         application: "claude-launcher".to_string(),
         projects: projects.into_iter().map(|p| ExportedProject {
@@ -1424,7 +1579,9 @@ async fn export_projects(db: State<'_, AppDatabase>, file_path: String) -> Resul
             icon: p.icon,
             icon_size: p.icon_size,
             continue_flag: p.continue_flag,
+            group_id: p.group_id,
         }).collect(),
+        groups,
     };
 
     let json = serde_json::to_string_pretty(&export_data)
@@ -1451,8 +1608,8 @@ async fn import_projects(db: State<'_, AppDatabase>, file_path: String) -> Resul
     let export_data: ExportData = serde_json::from_str(&content)
         .map_err(|e| format!("Invalid JSON format: {}", e))?;
 
-    // Version check for future compatibility
-    if export_data.version > 1 {
+    // Version check for future compatibility (support versions 1 and 2)
+    if export_data.version > 2 {
         return Err(format!("Unsupported export version: {}. Please update the application.", export_data.version));
     }
 
@@ -1460,6 +1617,24 @@ async fn import_projects(db: State<'_, AppDatabase>, file_path: String) -> Resul
     let mut skipped = 0;
     let mut failed = 0;
     let mut errors = Vec::new();
+
+    // Import groups first (if present in version 2+)
+    if !export_data.groups.is_empty() {
+        let existing_groups = db.get_groups()?;
+        let existing_count = existing_groups.len();
+        let existing_ids: std::collections::HashSet<_> = existing_groups.iter().map(|g| g.id.clone()).collect();
+
+        // Add new groups that don't exist
+        let mut all_groups = existing_groups;
+        for group in export_data.groups {
+            if !existing_ids.contains(&group.id) {
+                all_groups.push(group);
+            }
+        }
+        let new_count = all_groups.len() - existing_count;
+        db.save_groups(&all_groups)?;
+        info!("Imported {} new groups", new_count);
+    }
 
     for project in export_data.projects {
         // Try to add the project
@@ -1487,6 +1662,7 @@ async fn import_projects(db: State<'_, AppDatabase>, file_path: String) -> Resul
                     icon: project.icon.clone(),
                     icon_size: project.icon_size,
                     continue_flag: Some(project.continue_flag),
+                    group_id: project.group_id.clone(),
                 };
 
                 match db.update_project(new_project.id.clone(), update) {
@@ -1517,6 +1693,75 @@ async fn import_projects(db: State<'_, AppDatabase>, file_path: String) -> Resul
         failed,
         errors,
     })
+}
+
+// Group management commands
+#[tauri::command]
+async fn get_groups(db: State<'_, AppDatabase>) -> Result<Vec<ProjectGroup>, String> {
+    db.get_groups()
+}
+
+#[tauri::command]
+async fn create_group(
+    db: State<'_, AppDatabase>,
+    name: String,
+    color: Option<String>,
+) -> Result<ProjectGroup, String> {
+    db.create_group(name, color)
+}
+
+#[tauri::command]
+async fn update_group(
+    db: State<'_, AppDatabase>,
+    id: String,
+    updates: GroupUpdate,
+) -> Result<ProjectGroup, String> {
+    db.update_group(id, updates)
+}
+
+#[tauri::command]
+async fn delete_group(db: State<'_, AppDatabase>, id: String) -> Result<serde_json::Value, String> {
+    db.delete_group(&id)?;
+    Ok(serde_json::json!({
+        "success": true,
+        "message": "Group deleted"
+    }))
+}
+
+#[tauri::command]
+async fn reorder_groups(
+    db: State<'_, AppDatabase>,
+    group_ids: Vec<String>,
+) -> Result<Vec<ProjectGroup>, String> {
+    db.reorder_groups(group_ids)
+}
+
+#[tauri::command]
+async fn move_project_to_group(
+    db: State<'_, AppDatabase>,
+    project_id: String,
+    group_id: Option<String>,
+) -> Result<Project, String> {
+    // Empty string or None means remove from group
+    let group_value = match group_id {
+        Some(ref id) if id.is_empty() => Some(String::new()),
+        Some(id) => Some(id),
+        None => Some(String::new()),
+    };
+
+    let updates = ProjectUpdate {
+        name: None,
+        tags: None,
+        notes: None,
+        pinned: None,
+        background_color: None,
+        icon: None,
+        icon_size: None,
+        continue_flag: None,
+        group_id: group_value,
+    };
+
+    db.update_project(project_id, updates)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -1645,7 +1890,13 @@ pub fn run() {
             delete_custom_icon,
             get_custom_icon_path,
             export_projects,
-            import_projects
+            import_projects,
+            get_groups,
+            create_group,
+            update_group,
+            delete_group,
+            reorder_groups,
+            move_project_to_group
         ])
         .on_window_event(|_window, event| {
             debug!("Window event: {:?}", event);
@@ -1667,7 +1918,7 @@ mod tests {
         // Use in-memory database for tests
         let conn = Connection::open_in_memory()?;
         
-        // Initialize tables with the same schema as production (lib.rs lines 97-109)
+        // Initialize tables with the same schema as production
         conn.execute(
             "CREATE TABLE IF NOT EXISTS projects (
                 id TEXT PRIMARY KEY,
@@ -1680,7 +1931,8 @@ mod tests {
                 background_color TEXT,
                 icon TEXT,
                 icon_size INTEGER,
-                continue_flag BOOLEAN DEFAULT 0
+                continue_flag BOOLEAN DEFAULT 0,
+                group_id TEXT
             )",
             [],
         )?;
@@ -1725,18 +1977,20 @@ mod tests {
             icon: Some("Code".to_string()),
             icon_size: Some(32),
             continue_flag: false,
+            group_id: Some("group-1".to_string()),
         };
-        
+
         // Test serialization
         let json = serde_json::to_string(&project).unwrap();
         assert!(json.contains("test-id"));
         assert!(json.contains("Test Project"));
-        
+
         // Test deserialization
         let deserialized: Project = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.id, project.id);
         assert_eq!(deserialized.name, project.name);
         assert_eq!(deserialized.tags, project.tags);
+        assert_eq!(deserialized.group_id, project.group_id);
     }
     
     #[test]
@@ -1808,20 +2062,22 @@ mod tests {
             icon: Some("Terminal".to_string()),
             icon_size: None,
             continue_flag: None,
+            group_id: Some("test-group".to_string()),
         };
-        
+
         let result = db.update_project(project.id.clone(), updates);
         assert!(result.is_ok());
-        
+
         // Verify updates
         let updated = result.unwrap();
-        
+
         assert_eq!(updated.name, "Updated Name");
         assert_eq!(updated.tags, vec!["new-tag"]);
         assert_eq!(updated.notes, "New notes");
         assert!(updated.pinned);
         assert_eq!(updated.background_color, Some("#2196f3".to_string()));
         assert_eq!(updated.icon, Some("Terminal".to_string()));
+        assert_eq!(updated.group_id, Some("test-group".to_string()));
     }
     
     #[test]

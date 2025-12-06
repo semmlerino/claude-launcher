@@ -119,7 +119,6 @@ function App() {
     pin: null, // stores projectId when pinning/unpinning
   });
   const initializingRef = useRef(false);
-  const dropZoneRef = useRef(null);
   const [globalContextMenu, setGlobalContextMenu] = useState(null);
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -358,16 +357,34 @@ function App() {
 
   // Set up file drop listener
   useEffect(() => {
-    let unlisten;
+    let unlistenDrop;
+    let unlistenEnter;
+    let unlistenLeave;
     let isMounted = true;
 
     const setupListener = async () => {
       try {
-        debug('Setting up Tauri drag-drop listener...');
+        debug('Setting up Tauri drag-drop listeners...');
 
-        const listener = await listen('tauri://drag-drop', async event => {
+        // Listen for drag enter to show overlay
+        const enterListener = await listen('tauri://drag-enter', () => {
+          if (!isMounted) return;
+          debug('Tauri drag-enter event received');
+          setDragOver(true);
+        });
+
+        // Listen for drag leave to hide overlay
+        const leaveListener = await listen('tauri://drag-leave', () => {
+          if (!isMounted) return;
+          debug('Tauri drag-leave event received');
+          setDragOver(false);
+        });
+
+        // Listen for drop
+        const dropListener = await listen('tauri://drag-drop', async event => {
           if (!isMounted) return;
           debug('Tauri drag-drop event received');
+          setDragOver(false);
           const paths = event.payload.paths || [];
 
           for (const path of paths) {
@@ -375,13 +392,17 @@ function App() {
           }
         });
 
-        // Only assign unlisten if component is still mounted
+        // Only assign unlisteners if component is still mounted
         if (isMounted) {
-          unlisten = listener;
-          debug('Tauri drag-drop listener set up successfully');
+          unlistenEnter = enterListener;
+          unlistenLeave = leaveListener;
+          unlistenDrop = dropListener;
+          debug('Tauri drag-drop listeners set up successfully');
         } else {
           // Component unmounted during setup, clean up immediately
-          listener();
+          enterListener();
+          leaveListener();
+          dropListener();
         }
       } catch (error) {
         if (isMounted) {
@@ -394,9 +415,9 @@ function App() {
 
     return () => {
       isMounted = false;
-      if (unlisten) {
-        unlisten();
-      }
+      if (unlistenDrop) unlistenDrop();
+      if (unlistenEnter) unlistenEnter();
+      if (unlistenLeave) unlistenLeave();
     };
   }, [addProjectByPath]);
 
@@ -488,30 +509,6 @@ function App() {
       setLoadingOperations(prev => ({ ...prev, add: false }));
     }
   }, [addProjectByPath, showSnackbar]);
-
-  // Handle drag and drop
-  const handleDragOver = e => {
-    debug('HTML dragOver event fired');
-    e.preventDefault();
-    e.stopPropagation();
-    setDragOver(true);
-  };
-
-  const handleDragLeave = e => {
-    debug('HTML dragLeave event fired');
-    e.preventDefault();
-    e.stopPropagation();
-    setDragOver(false);
-  };
-
-  const handleDrop = async e => {
-    debug('HTML drop event fired');
-    e.preventDefault();
-    e.stopPropagation();
-    setDragOver(false);
-    // The actual file handling is done by the Tauri drag-drop event listener
-    // This handler just prevents the browser's default behavior
-  };
 
   // Helper function to update a project in the state
   // Optimized to avoid unnecessary re-renders
@@ -686,10 +683,6 @@ function App() {
           flexDirection: 'column',
         }}
         onContextMenu={handleGlobalContextMenu}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-        ref={dropZoneRef}
       >
         {/* App Bar */}
         <AppBar position="static" elevation={0} data-tauri-drag-region>
@@ -896,30 +889,6 @@ function App() {
             />
           )}
 
-          {/* Drag Over Overlay */}
-          {dragOver && (
-            <Box
-              sx={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                backgroundColor: 'rgba(0, 0, 0, 0.5)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                borderRadius: 2,
-                border: '3px dashed',
-                borderColor: 'primary.main',
-                pointerEvents: 'none',
-              }}
-            >
-              <Typography variant="h4" color="primary">
-                Drop folder here
-              </Typography>
-            </Box>
-          )}
         </Container>
 
         {/* Floating Action Button */}
@@ -1003,6 +972,31 @@ function App() {
             <ListItemText>Close</ListItemText>
           </MenuItem>
         </Menu>
+
+        {/* Drag Over Overlay - at root level to cover full viewport */}
+        {dragOver && (
+          <Box
+            sx={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: 'rgba(0, 0, 0, 0.5)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              border: '3px dashed',
+              borderColor: 'primary.main',
+              pointerEvents: 'none',
+              zIndex: 9999,
+            }}
+          >
+            <Typography variant="h4" color="primary">
+              Drop folder here
+            </Typography>
+          </Box>
+        )}
 
         {/* Settings Dialog */}
         <SettingsDialog
