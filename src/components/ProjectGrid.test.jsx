@@ -1,4 +1,3 @@
-import React from 'react';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { screen, within } from '@testing-library/react';
 import { createTheme } from '@mui/material';
