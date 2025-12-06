@@ -16,6 +16,7 @@ const ProjectGrid = ({
   onToggleGroupCollapse,
   onMoveToGroup,
   loadingOperations,
+  cardScale = 1.0,
 }) => {
   const theme = useTheme();
   const isSmallScreen = useMediaQuery(theme.breakpoints.down('md'));
@@ -42,6 +43,9 @@ const ProjectGrid = ({
         sx={{
           outline: 'none',
           cursor: 'grab',
+          transform: cardScale !== 1 ? `scale(${cardScale})` : undefined,
+          transformOrigin: 'top left',
+          width: cardScale !== 1 ? `${100 / cardScale}%` : undefined,
           '& > .MuiCard-root': {
             boxShadow: theme.shadows[1],
             borderColor: 'transparent',

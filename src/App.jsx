@@ -129,6 +129,7 @@ function App() {
   const [groups, setGroups] = useState([]);
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const [cardScale, setCardScale] = useState(1.0);
 
   // Create theme based on dark mode preference
   const theme = React.useMemo(
@@ -181,6 +182,22 @@ function App() {
     } catch (_error) {
       // Use system preference if loading fails
       info('Using system theme preference');
+    }
+  }, []);
+
+  // Load card scale preference
+  const loadCardScale = useCallback(async () => {
+    try {
+      const savedScale = await invoke('get_setting', { key: 'card_scale' });
+      if (savedScale) {
+        const scale = parseFloat(savedScale);
+        if (scale >= 0.7 && scale <= 1.5) {
+          setCardScale(scale);
+        }
+      }
+    } catch (_error) {
+      // Use default if loading fails
+      info('Using default card scale');
     }
   }, []);
 
@@ -344,6 +361,7 @@ function App() {
           loadGroups(),
           loadSortPreference(),
           loadThemePreference(),
+          loadCardScale(),
           checkClaudeInstalled(),
         ]);
 
@@ -990,6 +1008,7 @@ function App() {
               onToggleGroupCollapse={handleToggleGroupCollapse}
               onMoveToGroup={handleMoveToGroup}
               loadingOperations={loadingOperations}
+              cardScale={cardScale}
             />
           )}
 
@@ -1129,6 +1148,8 @@ function App() {
           open={settingsDialogOpen}
           onClose={() => setSettingsDialogOpen(false)}
           showSnackbar={showSnackbar}
+          cardScale={cardScale}
+          onCardScaleChange={setCardScale}
         />
 
         {/* Group Manager Dialog */}

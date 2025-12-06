@@ -16,6 +16,7 @@ import {
   InputLabel,
   Alert,
   CircularProgress,
+  Slider,
 } from '@mui/material';
 import { Settings as SettingsIcon } from '@mui/icons-material';
 import { invoke } from '@tauri-apps/api/core';
@@ -28,12 +29,13 @@ const WSL_LAUNCH_METHODS = [
 
 const DEFAULT_CLAUDE_PATH = '/home/gabrielh/.nvm/versions/node/v24.1.0/bin/claude';
 
-const SettingsDialog = ({ open, onClose, showSnackbar }) => {
+const SettingsDialog = ({ open, onClose, showSnackbar, cardScale, onCardScaleChange }) => {
   const [useWsl, setUseWsl] = useState(true);
   const [claudeExecutablePath, setClaudeExecutablePath] = useState(DEFAULT_CLAUDE_PATH);
   const [keepTerminalOpen, setKeepTerminalOpen] = useState(false);
   const [wslLaunchMethod, setWslLaunchMethod] = useState('batch');
   const [hotkeyEnabled, setHotkeyEnabled] = useState(false);
+  const [localCardScale, setLocalCardScale] = useState(cardScale);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState(null);
 
@@ -41,8 +43,9 @@ const SettingsDialog = ({ open, onClose, showSnackbar }) => {
   useEffect(() => {
     if (open) {
       loadSettings();
+      setLocalCardScale(cardScale);
     }
-  }, [open]);
+  }, [open, cardScale]);
 
   const loadSettings = async () => {
     setLoading(true);
@@ -76,7 +79,9 @@ const SettingsDialog = ({ open, onClose, showSnackbar }) => {
         invoke('set_setting', { key: 'claude_executable_path', value: claudeExecutablePath }),
         invoke('set_setting', { key: 'keep_terminal_open', value: keepTerminalOpen ? 'true' : 'false' }),
         invoke('set_setting', { key: 'wsl_launch_method', value: wslLaunchMethod }),
+        invoke('set_setting', { key: 'card_scale', value: String(localCardScale) }),
       ]);
+      onCardScaleChange(localCardScale);
       showSnackbar('Settings saved', 'success');
       onClose();
     } catch (error) {
@@ -93,6 +98,7 @@ const SettingsDialog = ({ open, onClose, showSnackbar }) => {
     setKeepTerminalOpen(false);
     setWslLaunchMethod('batch');
     setHotkeyEnabled(false);
+    setLocalCardScale(1.0);
     setLoadError(null);
   };
 
@@ -238,6 +244,31 @@ const SettingsDialog = ({ open, onClose, showSnackbar }) => {
         >
           Reset Window Position
         </Button>
+
+        <Typography variant="subtitle2" gutterBottom sx={{ fontWeight: 'bold', mt: 3 }}>
+          Display
+        </Typography>
+
+        <Box sx={{ px: 2, mt: 1 }}>
+          <Typography variant="body2" gutterBottom>
+            Card Size: {Math.round(localCardScale * 100)}%
+          </Typography>
+          <Slider
+            value={localCardScale}
+            onChange={(e, val) => setLocalCardScale(val)}
+            min={0.7}
+            max={1.5}
+            step={0.1}
+            marks={[
+              { value: 0.7, label: '70%' },
+              { value: 1.0, label: '100%' },
+              { value: 1.5, label: '150%' },
+            ]}
+            disabled={loading}
+            valueLabelDisplay="auto"
+            valueLabelFormat={val => `${Math.round(val * 100)}%`}
+          />
+        </Box>
       </DialogContent>
       <DialogActions>
         <Button onClick={handleReset} disabled={loading}>
