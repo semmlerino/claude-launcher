@@ -146,7 +146,6 @@ const IconPicker = ({ open, onClose, onIconSelect, currentIcon, currentIconSize,
   const [currentTab, setCurrentTab] = useState(0); // 0 = predefined, 1 = custom
   const [customIcons, setCustomIcons] = useState([]);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
-  const [_loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState(null);
 
   // Load custom icons when the component mounts or when tab changes
@@ -168,7 +167,6 @@ const IconPicker = ({ open, onClose, onIconSelect, currentIcon, currentIconSize,
   }, [open, currentIcon]);
 
   const loadCustomIcons = async () => {
-    setLoading(true);
     setLoadError(null);
     try {
       const icons = await invoke('get_custom_icons');
@@ -177,8 +175,6 @@ const IconPicker = ({ open, onClose, onIconSelect, currentIcon, currentIconSize,
       console.error('Failed to load custom icons:', error);
       setLoadError('Failed to load custom icons. Please try again.');
       setCustomIcons([]);
-    } finally {
-      setLoading(false);
     }
   };
 

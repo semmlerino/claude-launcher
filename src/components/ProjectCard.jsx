@@ -39,7 +39,6 @@ const ProjectCard = React.memo(
     onDelete,
     onPin,
     onTagClick,
-    isSelected,
     loadingOperations = {},
     groups = [],
     onMoveToGroup,
@@ -181,7 +180,6 @@ const ProjectCard = React.memo(
 
     return (
       <Card
-        data-selected={isSelected}
         onContextMenu={handleContextMenu}
         sx={{
           height: '100%',

@@ -84,7 +84,7 @@ const SettingsDialog = ({ open, onClose, showSnackbar }) => {
     setUseWsl(true);
     setKeepTerminalOpen(false);
     setWslLaunchMethod('batch');
-    setHotkeyEnabled(false);
+    // Note: hotkeyEnabled is not reset here because it saves immediately on toggle
     setLoadError(null);
   };
 

@@ -1,21 +1,12 @@
 import { Box, Typography, Collapse, IconButton, Chip, useTheme, useMediaQuery } from '@mui/material';
 import { Masonry } from '@mui/lab';
 import { ExpandMore as ExpandMoreIcon, ExpandLess as ExpandLessIcon } from '@mui/icons-material';
-// ProjectCard is used via renderProjectCard prop
-// eslint-disable-next-line no-unused-vars
-import ProjectCard from './ProjectCard';
 
 const GroupSection = ({
   group,
   projects,
-  onUpdateProject: _onUpdateProject,
-  onLaunchProject: _onLaunchProject,
-  onDeleteProject: _onDeleteProject,
-  onPinProject: _onPinProject,
-  onTagClick: _onTagClick,
   onToggleCollapse,
   onMoveToGroup,
-  loadingOperations: _loadingOperations,
   renderProjectCard,
 }) => {
   const theme = useTheme();

@@ -58,7 +58,6 @@ const ProjectGrid = ({
           onDelete={onDeleteProject}
           onPin={onPinProject}
           onTagClick={onTagClick}
-          isSelected={false}
           loadingOperations={loadingOperations}
           groups={groups}
           onMoveToGroup={onMoveToGroup}
@@ -114,14 +113,8 @@ const ProjectGrid = ({
               key={group.id}
               group={group}
               projects={getGroupProjects(group.id)}
-              onUpdateProject={onUpdateProject}
-              onLaunchProject={onLaunchProject}
-              onDeleteProject={onDeleteProject}
-              onPinProject={onPinProject}
-              onTagClick={onTagClick}
               onToggleCollapse={onToggleGroupCollapse}
               onMoveToGroup={onMoveToGroup}
-              loadingOperations={loadingOperations}
               renderProjectCard={renderProjectCard}
             />
           ))}

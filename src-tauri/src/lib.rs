@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::fs;
 use std::env;
+use std::sync::Arc;
 use tauri::{Manager, State};
 use tauri_plugin_shell::ShellExt;
 use tauri_plugin_opener::OpenerExt;
@@ -137,7 +138,7 @@ fn cleanup_orphan_batch_files() {
                         // Check file age
                         if let Ok(metadata) = fs::metadata(&path) {
                             if let Ok(modified) = metadata.modified() {
-                                if modified.elapsed().unwrap_or_default() > max_age {
+                                if std::time::SystemTime::now().duration_since(modified).unwrap_or(max_age + std::time::Duration::from_secs(1)) > max_age {
                                     match fs::remove_file(&path) {
                                         Ok(_) => info!("Cleaned orphan batch file: {:?}", path),
                                         Err(e) => debug!("Could not clean orphan file {:?}: {}", path, e),
@@ -168,7 +169,7 @@ fn parse_tags_json(json_str: &str, project_id: &str) -> Vec<String> {
 struct AppDatabase {
     conn: Mutex<Connection>,
     settings_cache: Mutex<LruCache<String, String>>,
-    projects_cache: Mutex<Option<Vec<Project>>>,
+    projects_cache: Mutex<Option<Arc<Vec<Project>>>>,
 }
 
 // SAFETY: AppDatabase is safe to share between threads because:
@@ -281,7 +282,14 @@ impl AppDatabase {
                 [],
             ) {
                 Ok(_) => info!("Successfully added background_color column"),
-                Err(e) => warn!("Could not add background_color column: {}", e),
+                Err(e) => {
+                    let err_msg = e.to_string();
+                    if err_msg.contains("duplicate") || err_msg.contains("already exists") {
+                        warn!("Column background_color already exists, skipping migration");
+                    } else {
+                        return Err(Box::new(e));
+                    }
+                }
             }
         }
 
@@ -301,7 +309,14 @@ impl AppDatabase {
                 [],
             ) {
                 Ok(_) => info!("Successfully added continue_flag column"),
-                Err(e) => warn!("Could not add continue_flag column: {}", e),
+                Err(e) => {
+                    let err_msg = e.to_string();
+                    if err_msg.contains("duplicate") || err_msg.contains("already exists") {
+                        warn!("Column continue_flag already exists, skipping migration");
+                    } else {
+                        return Err(Box::new(e));
+                    }
+                }
             }
         }
 
@@ -321,7 +336,14 @@ impl AppDatabase {
                 [],
             ) {
                 Ok(_) => info!("Successfully added icon column"),
-                Err(e) => warn!("Could not add icon column: {}", e),
+                Err(e) => {
+                    let err_msg = e.to_string();
+                    if err_msg.contains("duplicate") || err_msg.contains("already exists") {
+                        warn!("Column icon already exists, skipping migration");
+                    } else {
+                        return Err(Box::new(e));
+                    }
+                }
             }
         }
 
@@ -341,7 +363,14 @@ impl AppDatabase {
                 [],
             ) {
                 Ok(_) => info!("Successfully added icon_size column"),
-                Err(e) => warn!("Could not add icon_size column: {}", e),
+                Err(e) => {
+                    let err_msg = e.to_string();
+                    if err_msg.contains("duplicate") || err_msg.contains("already exists") {
+                        warn!("Column icon_size already exists, skipping migration");
+                    } else {
+                        return Err(Box::new(e));
+                    }
+                }
             }
         }
 
@@ -361,7 +390,14 @@ impl AppDatabase {
                 [],
             ) {
                 Ok(_) => info!("Successfully added group_id column"),
-                Err(e) => warn!("Could not add group_id column: {}", e),
+                Err(e) => {
+                    let err_msg = e.to_string();
+                    if err_msg.contains("duplicate") || err_msg.contains("already exists") {
+                        warn!("Column group_id already exists, skipping migration");
+                    } else {
+                        return Err(Box::new(e));
+                    }
+                }
             }
 
             // Create index for efficient group queries
@@ -370,7 +406,14 @@ impl AppDatabase {
                 [],
             ) {
                 Ok(_) => info!("Successfully created group_id index"),
-                Err(e) => warn!("Could not create group_id index: {}", e),
+                Err(e) => {
+                    let err_msg = e.to_string();
+                    if err_msg.contains("duplicate") || err_msg.contains("already exists") {
+                        warn!("Index idx_projects_group_id already exists, skipping migration");
+                    } else {
+                        return Err(Box::new(e));
+                    }
+                }
             }
         }
 
@@ -390,7 +433,14 @@ impl AppDatabase {
                 [],
             ) {
                 Ok(_) => info!("Successfully added resume_flag column"),
-                Err(e) => warn!("Could not add resume_flag column: {}", e),
+                Err(e) => {
+                    let err_msg = e.to_string();
+                    if err_msg.contains("duplicate") || err_msg.contains("already exists") {
+                        warn!("Column resume_flag already exists, skipping migration");
+                    } else {
+                        return Err(Box::new(e));
+                    }
+                }
             }
         }
 
@@ -511,15 +561,15 @@ impl AppDatabase {
         }
     }
     
-    fn get_all_projects(&self) -> Result<Vec<Project>, String> {
+    fn get_all_projects(&self) -> Result<Arc<Vec<Project>>, String> {
         // Check cache first
         {
             let cache = self.projects_cache.lock();
             if let Some(ref projects) = *cache {
-                return Ok(projects.clone());
+                return Ok(Arc::clone(projects));
             }
         }
-        
+
         // Cache miss, query database
         let conn = self.conn.lock();
 
@@ -554,14 +604,15 @@ impl AppDatabase {
             .map_err(|e| e.to_string())?
             .collect::<SqliteResult<Vec<_>>>()
             .map_err(|e| e.to_string())?;
-        
+
         // Cache the results
+        let result = Arc::new(projects);
         {
             let mut cache = self.projects_cache.lock();
-            *cache = Some(projects.clone());
+            *cache = Some(Arc::clone(&result));
         }
-        
-        Ok(projects)
+
+        Ok(result)
     }
     
     fn invalidate_projects_cache(&self) {
@@ -914,7 +965,7 @@ impl AppDatabase {
         }
         
         std::fs::remove_file(&icon_path)
-            .map_err(|e| format!("Failed to delete custom icon file: {}", e))?;
+            .map_err(|e| format!("Failed to delete custom icon file '{}': {}", icon_id, e))?;
         
         // Also update any projects that were using this icon
         let custom_icon_path = format!("custom://{}", icon_id);
@@ -1093,10 +1144,10 @@ fn launch_wsl_batch(
 
                     // Clean up batch file after a delay with retry logic for Windows file locking
                     let batch_file_clone = batch_file.clone();
-                    std::thread::spawn(move || {
+                    tokio::spawn(async move {
                         let delays = [60, 30, 30, 60]; // Total: 3 minutes of retries
                         for (i, delay) in delays.iter().enumerate() {
-                            std::thread::sleep(std::time::Duration::from_secs(*delay));
+                            tokio::time::sleep(std::time::Duration::from_secs(*delay)).await;
                             match fs::remove_file(&batch_file_clone) {
                                 Ok(_) => {
                                     info!("Cleaned up batch file: {:?}", batch_file_clone);
@@ -1125,8 +1176,8 @@ fn launch_wsl_batch(
             }
         }
         Err(e) => {
-            warn!("Failed to create batch file: {}", e);
-            Err(format!("Failed to create launch script: {}", e))
+            warn!("Failed to create batch file at {:?}: {}", batch_file, e);
+            Err(format!("Failed to create launch script at {:?}: {}", batch_file, e))
         }
     }
 }
@@ -1154,7 +1205,7 @@ async fn add_project(db: State<'_, AppDatabase>, path: String) -> Result<Project
 }
 
 #[tauri::command]
-async fn get_projects(db: State<'_, AppDatabase>) -> Result<Vec<Project>, String> {
+async fn get_projects(db: State<'_, AppDatabase>) -> Result<Arc<Vec<Project>>, String> {
     db.get_all_projects()
 }
 
@@ -1523,7 +1574,7 @@ async fn upload_custom_icon(
     
     // Copy the file to the custom icons directory
     std::fs::copy(&source_path, &dest_path)
-        .map_err(|e| format!("Failed to copy icon file: {}", e))?;
+        .map_err(|e| format!("Failed to copy icon file from '{}' to '{}': {}", source_path, dest_path.display(), e))?;
     
     info!("Successfully uploaded custom icon: {}", filename);
     
@@ -1584,18 +1635,18 @@ async fn export_projects(db: State<'_, AppDatabase>, file_path: String) -> Resul
         version: 2,  // Bumped version for groups support
         exported_at: chrono::Utc::now().to_rfc3339(),
         application: "claude-launcher".to_string(),
-        projects: projects.into_iter().map(|p| ExportedProject {
-            path: p.path,
-            name: p.name,
-            tags: p.tags,
-            notes: p.notes,
+        projects: projects.iter().map(|p| ExportedProject {
+            path: p.path.clone(),
+            name: p.name.clone(),
+            tags: p.tags.clone(),
+            notes: p.notes.clone(),
             pinned: p.pinned,
-            background_color: p.background_color,
-            icon: p.icon,
+            background_color: p.background_color.clone(),
+            icon: p.icon.clone(),
             icon_size: p.icon_size,
             continue_flag: p.continue_flag,
             resume_flag: p.resume_flag,
-            group_id: p.group_id,
+            group_id: p.group_id.clone(),
         }).collect(),
         groups,
     };
@@ -1656,19 +1707,7 @@ async fn import_projects(db: State<'_, AppDatabase>, file_path: String) -> Resul
         // Try to add the project
         match db.add_project(project.path.clone()) {
             Ok(new_project) => {
-                // Check if this is an existing project (path already existed)
-                // add_project returns existing project if path exists
-                let is_new = new_project.name != project.name ||
-                             new_project.tags != project.tags ||
-                             new_project.notes != project.notes;
-
-                if !is_new {
-                    // Path already existed and returned unchanged - skip it
-                    skipped += 1;
-                    continue;
-                }
-
-                // Update with the additional fields from export
+                // Always update with imported data (covers both new and existing projects)
                 let update = ProjectUpdate {
                     name: Some(project.name.clone()),
                     tags: Some(project.tags.clone()),
@@ -1809,7 +1848,7 @@ pub fn run() {
                 tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir { file_name: None }),
                 tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Webview),
             ])
-            .level(log::LevelFilter::Debug)
+            .level(if cfg!(debug_assertions) { log::LevelFilter::Debug } else { log::LevelFilter::Info })
             .build())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
@@ -1950,6 +1989,7 @@ mod tests {
                 icon TEXT,
                 icon_size INTEGER,
                 continue_flag BOOLEAN DEFAULT 0,
+                resume_flag BOOLEAN DEFAULT 0,
                 group_id TEXT
             )",
             [],
@@ -1995,6 +2035,7 @@ mod tests {
             icon: Some("Code".to_string()),
             icon_size: Some(32),
             continue_flag: false,
+            resume_flag: false,
             group_id: Some("group-1".to_string()),
         };
 
@@ -2080,6 +2121,7 @@ mod tests {
             icon: Some("Terminal".to_string()),
             icon_size: None,
             continue_flag: None,
+            resume_flag: None,
             group_id: Some("test-group".to_string()),
         };
 
@@ -2186,6 +2228,7 @@ mod tests {
             icon: None,
             icon_size: None,
             continue_flag: None,
+            resume_flag: None,
             group_id: None,
         };
         db.update_project(project2.id, updates).unwrap();
@@ -2211,6 +2254,7 @@ mod tests {
             icon: None,
             icon_size: None,
             continue_flag: None,
+            resume_flag: None,
             group_id: None,
         };
         let updated = db.update_project(project.id.clone(), updates).unwrap();

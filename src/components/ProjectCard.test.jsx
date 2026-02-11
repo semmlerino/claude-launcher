@@ -463,14 +463,6 @@ describe('ProjectCard', () => {
       expect(document.activeElement).toBe(launchButton);
     });
 
-    test('handles isSelected prop (visual selection)', () => {
-      renderWithTheme(<ProjectCard project={defaultProject} {...mockHandlers} isSelected={true} />);
-
-      // The component should be rendered with isSelected=true
-      // Note: The current implementation doesn't visually indicate selection,
-      // but the prop is passed and could be used for styling
-      expect(screen.getByText('My Test Project')).toBeInTheDocument();
-    });
   });
 
   describe('Loading states for different operations', () => {

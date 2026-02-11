@@ -919,7 +919,7 @@ function App() {
           }}
         >
           {/* Tag Filter Section */}
-          {!loading && allTags.length > 0 && (
+          {!loading && (allTags.length > 0 || activeTags.length > 0) && (
             <Box sx={{ mb: 3 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
                 <Typography variant="h6" sx={{ mr: 2 }}>
