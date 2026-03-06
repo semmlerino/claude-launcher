@@ -6,7 +6,7 @@
 
 A fast, native Windows desktop launcher for Claude Code projects, built with Tauri and React.
 
-> **Screenshot:** *(add screenshot here — run `npm run tauri dev` and screenshot the main window)*
+![Claude Launcher — project cards with one-click launch](screenshot.png)
 
 ## Why Rust Instead of Python?
 
