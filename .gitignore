@@ -100,6 +100,7 @@ coverage/
 .coverage
 .pytest_cache/
 test-results.json
+test-results.xml
 
 # IDE specific
 *.iml

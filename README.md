@@ -6,7 +6,7 @@
 
 A fast, native Windows desktop launcher for Claude Code projects, built with Tauri and React.
 
-![Claude Launcher — project cards with one-click launch](screenshot.png)
+![Claude Launcher — project cards with one-click launch](docs/screenshots/app_overview.png)
 
 ## Why Rust Instead of Python?
 
@@ -99,6 +99,11 @@ Project data is stored in a SQLite database at:
 │   └── tauri.conf.json    # Tauri configuration
 └── package.json           # Node dependencies
 ```
+
+## Additional Docs
+
+- `docs/guides/` for testing, spec, and WSL integration notes
+- `docs/internal/ai_workflows/` for maintainer-only agent workflow material
 
 ## Troubleshooting
 
